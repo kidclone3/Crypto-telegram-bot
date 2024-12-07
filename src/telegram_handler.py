@@ -177,14 +177,6 @@ class TelegramHandler:
                 )
                 return
 
-            # Validate symbol
-            if symbol not in self.symbols:
-                await update.message.reply_text(
-                    f"⚠️ Symbol {symbol} not found. Please choose from supported symbols.\n"
-                    f"Example symbols:\n{', '.join(self.symbols[:5])}..."
-                )
-                return
-
             # Send loading message
             msg = await update.message.reply_text(
                 f"📊 Generating {timeframe} chart for {symbol}..."
@@ -200,10 +192,33 @@ class TelegramHandler:
                 return
 
             # Calculate some basic statistics
-            change_pct = ((df["close"][-1] - df["close"][0]) / df["close"][0]) * 100
+            change_pct = (
+                (df["close"].iloc[-1] - df["close"].iloc[0]) / df["close"].iloc[0]
+            ) * 100
             high = df["high"].max()
             low = df["low"].min()
             volume = df["volume"].sum()
+
+            # Assuming df is your DataFrame and it has a DateTime index
+            now = datetime.now()
+
+            # Exclude the current hour
+            df_excluding_current_hour = df[
+                df.index < now.replace(minute=0, second=0, microsecond=0)
+            ]
+
+            # Get the last 24 rows excluding the current hour
+            last_24_rows = df_excluding_current_hour.tail(24)
+            volume_last_24h = last_24_rows["volume"].sum()
+
+            # Get the previous 24 rows excluding the current hour
+            previous_24_rows = df_excluding_current_hour.iloc[-48:-24]
+            volume_previous_24h = previous_24_rows["volume"].sum()
+
+            # volume change
+            volume_change = (
+                (volume_last_24h - volume_previous_24h) / volume_previous_24h * 100
+            )
 
             # Create and send chart
             chart_buf = await price_bot.generate_chart(df, symbol, timeframe)
@@ -214,12 +229,13 @@ class TelegramHandler:
             # Format caption
             caption = (
                 f"📈 {symbol} {timeframe} Chart\n"
-                f"Period: {df.index[0].strftime('%Y-%m-%d %H:%M')} - {df.index[-1].strftime('%Y-%m-%d %H:%M')}\n"
-                f"Price: ${df['close'][-1]:,.2f}\n"
+                f"Period: {df.iloc[0].name.strftime('%Y-%m-%d %H:%M')} - {df.iloc[-1].name.strftime('%Y-%m-%d %H:%M')}\n"
+                f"Price: ${df['close'].iloc[-1]:,.2f}\n"
                 f"Change: {change_pct:+.2f}% {'🟢' if change_pct >= 0 else '🔴'}\n"
                 f"High: ${high:,.2f}\n"
                 f"Low: ${low:,.2f}\n"
-                f"Volume: ${volume:,.2f}"
+                f"Volume last 24h: ${volume_last_24h:,.2f}\n"
+                f"Volume previous 24h: ${volume_previous_24h:,.2f}\t, change {'🟢' if volume_change >= 0 else '🔴'} {volume_change:,.2f}%\n"
             )
 
             # Delete loading message and send chart
