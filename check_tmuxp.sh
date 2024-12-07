@@ -10,7 +10,7 @@ if ! tmux has-session -t $session 2>/dev/null; then
     echo "Creating new tmux session: $session"
     tmux new-session -d -s $session  # Create a new detached session
     tmux send-keys -t $session "source $venv_path" C-m  # Activate the virtual environment
-    tmux send-keys -t $session "python $script_path" C-m  # Run the Python script
+    tmux send-keys -t $session "watchmedo auto-restart --directory=./src --pattern='*.py' --recursive -- python -u $script_path" C-m  # Run the Python script
 else
     echo "Attaching to existing tmux session: $session"
 fi
