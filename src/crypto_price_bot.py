@@ -39,7 +39,6 @@ class CryptoPriceBot:
             )
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
-
             return df
 
         except Exception as e:
@@ -97,10 +96,6 @@ class CryptoPriceBot:
             # Validate input data
             if df is None or df.empty:
                 raise ValueError("Empty or invalid DataFrame provided")
-
-            required_columns = ["open", "high", "low", "close", "volume"]
-            if not all(col in df.columns for col in required_columns):
-                raise ValueError(f"DataFrame must contain columns: {required_columns}")
 
             # Create buffer for the image
             buf = io.BytesIO()
