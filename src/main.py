@@ -5,7 +5,6 @@ import os
 import dotenv
 import asyncio
 
-from telegram import Update
 from telegram_handler import TelegramHandler
 
 dotenv.load_dotenv()
@@ -34,7 +33,7 @@ async def get_top_marketcap_currencies(limit: int = 100) -> pd.DataFrame:
 
         df = pd.DataFrame(market_data)
         df = df.sort_values("market_cap", ascending=False).reset_index(drop=True)
-        df["price"] = df["price"].map("${:,.2f}".format)
+        df["price"] = df["price"].map("${:,.4f}".format)
         df["volume_24h"] = df["volume_24h"].map("${:,.0f}".format)
         df["market_cap"] = df["market_cap"].map("${:,.0f}".format)
         df["change_24h"] = df["change_24h"].map("{:+.2f}%".format)

@@ -33,8 +33,8 @@ def format_price_message(data: dict) -> str:
     message = (
         f"💰 {data['symbol']} Price Information\n"
         f"📅 {datetime.fromtimestamp(data['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
-        f"Current Price: ${data['current_price']:,.2f}\n"
-        f"24h Range: ${data['low_24h']:,.2f} - ${data['high_24h']:,.2f}\n"
+        f"Current Price: ${data['current_price']:,.4f}\n"
+        f"24h Range: ${data['low_24h']:,.4f} - ${data['high_24h']:,.4f}\n"
         f"24h Volume: ${data['volume']:,.2f}\n\n"
     )
 

@@ -1,22 +1,13 @@
-import pathlib
-from typing import List, Dict
+from typing import List
 import aiofiles
-import ccxt.async_support as ccxt
-import pandas as pd
-import matplotlib.pyplot as plt
 from datetime import datetime
 import time
-import io
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from tabulate import tabulate
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
-import os
 import asyncio
-from utils import symbol_complete, time_it, format_price_message
-import threading
-from queue import Queue
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from utils import symbol_complete, format_price_message
 from crypto_price_bot import CryptoPriceBot
-import prettytable as pt
 
 
 class TelegramHandler:
@@ -31,7 +22,7 @@ class TelegramHandler:
         self.price_threshold = 0.005  # 0.5% threshold for price alerts
 
         self.application.add_handler(CommandHandler("start", self.start_command))
-        self.application.add_handler(CommandHandler(["a", "add"], self.alert_command))
+        self.application.add_handler(CommandHandler(["a", "alert"], self.alert_command))
         self.application.add_handler(
             CommandHandler(["d", "delete"], self.delete_alert_command)
         )
@@ -53,7 +44,7 @@ class TelegramHandler:
         welcome_msg = (
             "👋 Welcome to the Crypto Price Bot!\n\n"
             "Available commands:\n"
-            "/a or /add - Add a cryptocurrency to the monitored list\n"
+            "/a or /alert - Add a cryptocurrency to the monitored list\n"
             "\t E.g: /a BTC 1000000 - Set alert on BTC at 100k\n"
             "/p or /prices - Get current price\n"
             "\t E.g: /p BTC\n"
@@ -70,6 +61,7 @@ class TelegramHandler:
             interval=self.alert_check_interval,
             chat_id=update.message.chat_id,
         )
+        print("all jobs: ", context.job_queue.jobs())
 
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -77,7 +69,8 @@ class TelegramHandler:
         help_msg = (
             "🤖 Crypto Price Bot Commands:\n\n"
             "/p or /prices - Get 1h price changes for monitored cryptocurrencies\n"
-            "/a or /add BTC 1000000 - Add an alert for BTC at 100k\n"
+            "/a or /alert BTC 1000000 - Add an alert for BTC at 100k\n"
+            "/a or /alert 1 100 - Update alert for index at $100\n"
             "/f 15m 1 - Filter price changes by timeframe and percentage\n"
             "/c or /chart - Get price chart for a cryptocurrency\n"
             "/help - Show this help message\n\n"
@@ -129,7 +122,7 @@ class TelegramHandler:
     async def filter_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        await update.message.reply_text("📊 Fetching price data...")
+        msg = await update.message.reply_text("📊 Fetching price data...")
         try:
             start_time = time.time()
             price_bot = CryptoPriceBot()
@@ -150,13 +143,16 @@ class TelegramHandler:
                 return
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
-            message = f"🔄 Price Changes ({self.timeframe})\n📅 {timestamp}\n\n"
+            message = (
+                f"🔄 Price Changes {_threshold}% in {_timeframe}\n📅 {timestamp}\n\n"
+            )
             for data in price_changes:
                 if not data:
                     continue
                 emoji = "🟢" if data["pct_change"] >= 0 else "🔴"
                 message += f"""{emoji} {data["symbol"]}: {data["pct_change"]:+.2f}%\n"""
 
+            await msg.delete()
             await update.message.reply_text(message)
             end_time = time.time()
             print(f"Time taken: {end_time - start_time}")
@@ -201,6 +197,7 @@ class TelegramHandler:
             # Get candle data and create chart
             price_bot = CryptoPriceBot()
             df = await price_bot.fetch_ohlcv_data(symbol, timeframe)
+            df_future = await price_bot.fetch_future_ohlcv_data(symbol, timeframe)
             await price_bot.close()
 
             if df is None or df.empty:
@@ -245,10 +242,10 @@ class TelegramHandler:
             caption = (
                 f"📈 {symbol} {timeframe} Chart\n"
                 f"Period: {df.iloc[0].name.strftime('%Y-%m-%d %H:%M')} - {df.iloc[-1].name.strftime('%Y-%m-%d %H:%M')}\n"
-                f"Price: ${df['close'].iloc[-1]:,.2f}\n"
+                f"Price: ${df['close'].iloc[-1]:,.4f}\n"
                 f"Change: {change_pct:+.2f}% {'🟢' if change_pct >= 0 else '🔴'}\n"
-                f"High: ${high:,.2f}\n"
-                f"Low: ${low:,.2f}\n"
+                f"High: ${high:,.4f}\n"
+                f"Low: ${low:,.4f}\n"
                 f"Volume last 24h: ${volume_last_24h:,.2f}\n"
                 f"Volume previous 24h: ${volume_previous_24h:,.2f}\t, change {'🟢' if volume_change >= 0 else '🔴'} {volume_change:,.2f}%\n"
             )
@@ -256,6 +253,24 @@ class TelegramHandler:
             # Delete loading message and send chart
             await msg.delete()
             await update.message.reply_photo(chart_buf, caption=caption)
+
+            # Chart future data
+            if df_future is not None:
+                chart_buf = await price_bot.generate_chart(df_future, symbol, timeframe)
+
+                # Format caption
+                caption = (
+                    f"📈 Future: {symbol} {timeframe} Chart\n"
+                    f"Period: {df_future.iloc[0].name.strftime('%Y-%m-%d %H:%M')} - {df_future.iloc[-1].name.strftime('%Y-%m-%d %H:%M')}\n"
+                    f"Price: ${df_future['close'].iloc[-1]:,.4f}\n"
+                    f"Change: {change_pct:+.2f}% {'🟢' if change_pct >= 0 else '🔴'}\n"
+                    f"High: ${high:,.4f}\n"
+                    f"Low: ${low:,.4f}\n"
+                    f"Volume last 24h: ${volume_last_24h:,.2f}\n"
+                    f"Volume previous 24h: ${volume_previous_24h:,.2f}\t, change {'🟢' if volume_change >= 0 else '🔴'} {volume_change:,.2f}%\n"
+                )
+
+                await update.message.reply_photo(chart_buf, caption=caption)
 
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {str(e)}")
@@ -276,15 +291,18 @@ class TelegramHandler:
                 await update.message.reply_text("🔕 No alerts set")
                 return
 
-            alert_table = pt.PrettyTable(["ID", "Symbol", "Price ($)"])
-            alert_table.align["Symbol"] = "l"
+            # alert_table = pt.PrettyTable(["ID", "Symbol", "Price ($)"])
+            # alert_table.align["Symbol"] = "l"
+
+            table_header = ["ID", "Symbol", "Price ($)"]
+            table_body = []
             # Add numbers to the alerts
             for i, alert in enumerate(alerts):
                 symbol, price = alert.split(",")
-                alert_table.add_row([i + 1, symbol, f"${price}"])
+                table_body.append([i + 1, symbol, f"${price}"])
 
             # Convert table to string
-            alert_table = alert_table.get_string()
+            alert_table = tabulate(table_body, headers=table_header, tablefmt="pretty")
 
             await update.message.reply_text(
                 f"🔔 Alerts:\n<pre>{alert_table}</pre>", parse_mode="HTML"
@@ -298,8 +316,35 @@ class TelegramHandler:
             )
             return
 
-        symbol = symbol_complete(context.args[0].upper())
         price = float(context.args[1])
+
+        if context.args[0].isnumeric():
+            # Update alert by index
+            alert_id = int(context.args[0])
+            async with aiofiles.open("alert_list.txt", "r") as f:
+                alerts = await f.readlines()
+
+            if not alerts:
+                await update.message.reply_text("🔕 No alerts set")
+                return
+
+            if alert_id < 1 or alert_id > len(alerts):
+                await update.message.reply_text("⚠️ Invalid alert ID")
+                return
+            symbol = alerts[alert_id - 1].split(",")[0]
+            alerts[alert_id - 1] = f"{symbol},{price}\n"
+
+            async with aiofiles.open("alert_list.txt", "w") as f:
+                await f.writelines(alerts)
+
+            # Send confirmation message
+            await update.message.reply_text(
+                f"✅ Alert ID {alert_id} of symbol {symbol} updated to ${price:,.3f}"
+            )
+
+            return
+
+        symbol = symbol_complete(context.args[0].upper())
 
         async with aiofiles.open("alert_list.txt", "a") as f:
             await f.write(f"{symbol},{price}\n")
@@ -353,7 +398,6 @@ class TelegramHandler:
         query = update.callback_query
         await query.answer()
 
-        print("query_data: ", query.data)
         if query.data.startswith("delete_yes_"):
             alert_id = int(query.data.split("_")[2])
 
@@ -400,15 +444,14 @@ class TelegramHandler:
 
                     # Calculate price difference percentage
                     price_diff_pct = abs(current_price - target_price) / target_price
-
                     # If price is within threshold, send alert
                     if price_diff_pct <= self.price_threshold:
                         alert_message = (
                             f"🚨 Price Alert!\n"
                             f"Symbol: {symbol}\n"
-                            f"Target: ${target_price:,.2f}\n"
-                            f"Current: ${current_price:,.2f}\n"
-                            f"Difference: {price_diff_pct:.2f}%\n"
+                            f"Target: ${target_price:,.4f}\n"
+                            f"Current: ${current_price:,.4f}\n"
+                            f"Difference: {price_diff_pct:.4f}%\n"
                             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
                         )
                         # Send alert to all active chats

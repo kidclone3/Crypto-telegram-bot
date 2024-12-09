@@ -45,6 +45,36 @@ class CryptoPriceBot:
             print(f"Error fetching OHLCV data for {symbol}: {str(e)}")
             return None
 
+    async def fetch_future_ohlcv_data(
+        self, symbol: str, timeframe: str = "1h", limit: int = 100
+    ) -> pd.DataFrame | None:
+        """
+        Fetch OHLCV data for future and convert to DataFrame for charting
+
+        Args:
+            symbol: Trading pair symbol (e.g., 'BTC/USDT')
+            timeframe: Candle timeframe (e.g., '1h', '4h', '1d')
+            limit: Number of candles to fetch
+
+        Returns:
+            pd.DataFrame | None: OHLCV data in DataFrame format or None if error
+        """
+        try:
+            ohlcv = await self.exchange.fetch_ohlcv(
+                symbol + ":USDT", timeframe, limit=limit
+            )
+
+            df = pd.DataFrame(
+                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+            )
+            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+            df.set_index("timestamp", inplace=True)
+            return df
+
+        except Exception as e:
+            print(f"Error fetching OHLCV data for {symbol}: {str(e)}")
+            return None
+
     def _create_chart_style(self) -> dict:
         """Create and return the MPLFinance style configuration"""
         return mpf.make_mpf_style(

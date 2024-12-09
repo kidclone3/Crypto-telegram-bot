@@ -1,0 +1,18 @@
+# ruff.toml
+
+# Specify the maximum line length
+line-length = 100
+
+# Define the target Python version
+target-version = "py311"
+
+# Enable specific linting rules
+[tool.ruff.lint]
+# Select specific rules to enforce
+select = ["E", "F"]
+
+# Extend the selection of rules if needed
+extend-select = ["E501"]  # Example: enforce line length rule
+
+# Ignore specific rules for certain files
+ignore = ["F401"]  # Example: ignore unused import rule
