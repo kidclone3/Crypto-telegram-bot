@@ -55,8 +55,14 @@ This is an asynchronous Telegram bot built using Python.
 2. Run the bot:
 
     ```sh
-    python bot-telegram-async.py
+    python src/main.py
     ```
+
+Or if you have tmux installed, you can run the bot in a tmux session:
+
+```sh
+bash check_tmuxp.sh
+```
 
 ## Additional Information
 
