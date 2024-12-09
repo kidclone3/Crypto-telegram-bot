@@ -47,10 +47,11 @@ def format_price_message(data: dict) -> str:
             emoji = get_change_emoji(pct_change)
             message += f"{tf:>3}: {pct_change:+.2f}% {emoji}\n"
 
-    # Add spread information at the bottom
-    spread = data["ask"] - data["bid"]
-    spread_pct = (spread / data["current_price"]) * 100
-    message += f"\n📊 Spread: ${spread:.2f} ({spread_pct:.3f}%)"
+    if data.get("bid") and data.get("ask"):
+        # Add spread information at the bottom
+        spread = data["ask"] - data["bid"]
+        spread_pct = (spread / data["current_price"]) * 100
+        message += f"\n📊 Spread: ${spread:.2f} ({spread_pct:.3f}%)"
 
     return message
 

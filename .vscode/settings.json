@@ -3,4 +3,5 @@
     "python.analysis.extraPaths": [
         "src"
     ],
+    "jupyter.notebookFileRoot": "${workspaceFolder}"
 }

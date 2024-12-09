@@ -32,7 +32,7 @@ class CryptoPriceBot:
             pd.DataFrame | None: OHLCV data in DataFrame format or None if error
         """
         try:
-            ohlcv = await self.exchange.watch_ohlcv(symbol, timeframe, limit=limit)
+            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
 
             df = pd.DataFrame(
                 ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]

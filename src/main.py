@@ -4,6 +4,8 @@ import pandas as pd
 import os
 import dotenv
 import asyncio
+
+from telegram import Update
 from telegram_handler import TelegramHandler
 
 dotenv.load_dotenv()
@@ -44,7 +46,8 @@ async def get_top_marketcap_currencies(limit: int = 100) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-if __name__ == "__main__":
+def initialize_bot():
+    """Initialize bot with required data and start monitoring"""
     TELEGRAM_TOKEN = os.environ.get("YOUR_BOT_TOKEN")
     path = pathlib.Path("top_200_currencies.csv")
 
@@ -55,5 +58,21 @@ if __name__ == "__main__":
         data.to_csv("top_200_currencies.csv", index=True)
 
     SYMBOLS = data["symbol"].tolist()
+
+    # Create alert_list.txt if it doesn't exist
+    if not pathlib.Path("alert_list.txt").exists():
+        with open("alert_list.txt", "w") as f:
+            pass
+
+    # Initialize and run the telegram handler
     telegram_handler = TelegramHandler(TELEGRAM_TOKEN, SYMBOLS)
     telegram_handler.run()
+
+
+if __name__ == "__main__":
+    try:
+        initialize_bot()
+    except KeyboardInterrupt:
+        print("\nBot stopped by admin")
+    except Exception as e:
+        print(f"Error running bot: {str(e)}")

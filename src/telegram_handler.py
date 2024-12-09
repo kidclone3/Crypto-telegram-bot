@@ -1,13 +1,14 @@
 import pathlib
 from typing import List, Dict
+import aiofiles
 import ccxt.async_support as ccxt
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime
 import time
 import io
-from telegram import Bot, Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, ContextTypes, CallbackQueryHandler
 import os
 import asyncio
 from utils import symbol_complete, time_it, format_price_message
@@ -15,6 +16,7 @@ import threading
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from crypto_price_bot import CryptoPriceBot
+import prettytable as pt
 
 
 class TelegramHandler:
@@ -24,7 +26,15 @@ class TelegramHandler:
         self.timeframe = "15m"
         self.threshold = 1.0
 
+        # Alert settings
+        self.alert_check_interval = 60  # Check alerts every 60 seconds
+        self.price_threshold = 0.005  # 0.5% threshold for price alerts
+
         self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler(["a", "add"], self.alert_command))
+        self.application.add_handler(
+            CommandHandler(["d", "delete"], self.delete_alert_command)
+        )
         self.application.add_handler(CommandHandler(["p", "price"], self.price_command))
         self.application.add_handler(
             CommandHandler(["f", "filter"], self.filter_command)
@@ -32,6 +42,7 @@ class TelegramHandler:
         self.application.add_handler(CommandHandler(["c", "chart"], self.chart_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("ping", self.ping_command))
+        self.application.add_handler(CallbackQueryHandler(self.button_callback))
 
     async def ping_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🏓 Pong!")
@@ -42,6 +53,8 @@ class TelegramHandler:
         welcome_msg = (
             "👋 Welcome to the Crypto Price Bot!\n\n"
             "Available commands:\n"
+            "/a or /add - Add a cryptocurrency to the monitored list\n"
+            "\t E.g: /a BTC 1000000 - Set alert on BTC at 100k\n"
             "/p or /prices - Get current price\n"
             "\t E.g: /p BTC\n"
             "/filter - Filter price changes by timeframe and percentage\n"
@@ -52,12 +65,19 @@ class TelegramHandler:
         )
         await update.message.reply_text(welcome_msg)
 
+        context.job_queue.run_repeating(
+            self.monitor_alerts,
+            interval=self.alert_check_interval,
+            chat_id=update.message.chat_id,
+        )
+
     async def help_command(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         help_msg = (
             "🤖 Crypto Price Bot Commands:\n\n"
             "/p or /prices - Get 1h price changes for monitored cryptocurrencies\n"
+            "/a or /add BTC 1000000 - Add an alert for BTC at 100k\n"
             "/f 15m 1 - Filter price changes by timeframe and percentage\n"
             "/c or /chart - Get price chart for a cryptocurrency\n"
             "/help - Show this help message\n\n"
@@ -85,15 +105,9 @@ class TelegramHandler:
             # Get the symbol and ensure it's uppercase
             symbol = symbol_complete(context.args[0].upper())
 
-            # Check if symbol is supported
-            if symbol not in self.symbols:
-                await update.message.reply_text(
-                    f"⚠️ Symbol {symbol} not found. Please choose from supported symbols.\n"
-                    f"Example symbols:\n{', '.join(self.symbols[:5])}..."
-                )
-                return
-
-            await update.message.reply_text(f"📊 Fetching price data for {symbol}...")
+            msg = await update.message.reply_text(
+                f"📊 Fetching price data for {symbol}..."
+            )
 
             # Create a new bot instance for this request
             price_bot = CryptoPriceBot()
@@ -101,11 +115,13 @@ class TelegramHandler:
             await price_bot.close()
 
             if not ticker_data:
-                await update.message.reply_text(f"❌ Unable to fetch data for {symbol}")
+                await msg.edit_text(f"❌ Unable to fetch data for {symbol}")
                 return
 
             # Format the message
             message = format_price_message(ticker_data)
+            # delete the latest bot message and send the new message
+            await msg.delete()
             await update.message.reply_text(message)
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {str(e)}")
@@ -197,7 +213,6 @@ class TelegramHandler:
             ) * 100
             high = df["high"].max()
             low = df["low"].min()
-            volume = df["volume"].sum()
 
             # Assuming df is your DataFrame and it has a DateTime index
             now = datetime.now()
@@ -244,6 +259,173 @@ class TelegramHandler:
 
         except Exception as e:
             await update.message.reply_text(f"❌ Error: {str(e)}")
+
+    async def alert_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle the /add command
+        Usage: /add or  /add <symbol> <price>
+        Example: /add BTC/USDT 10000
+        """
+        if not context.args:
+            # Print the list of alerts
+            async with aiofiles.open("alert_list.txt", "r") as f:
+                alerts = await f.readlines()
+            if not alerts:
+                await update.message.reply_text("🔕 No alerts set")
+                return
+
+            alert_table = pt.PrettyTable(["ID", "Symbol", "Price ($)"])
+            alert_table.align["Symbol"] = "l"
+            # Add numbers to the alerts
+            for i, alert in enumerate(alerts):
+                symbol, price = alert.split(",")
+                alert_table.add_row([i + 1, symbol, f"${price}"])
+
+            # Convert table to string
+            alert_table = alert_table.get_string()
+
+            await update.message.reply_text(
+                f"🔔 Alerts:\n<pre>{alert_table}</pre>", parse_mode="HTML"
+            )
+            return
+
+        # Read the arguments
+        if len(context.args) != 2:
+            await update.message.reply_text(
+                "⚠️ Please provide a symbol and price. Example: /add BTC/USDT 10000"
+            )
+            return
+
+        symbol = symbol_complete(context.args[0].upper())
+        price = float(context.args[1])
+
+        async with aiofiles.open("alert_list.txt", "a") as f:
+            await f.write(f"{symbol},{price}\n")
+
+        # Send confirmation message
+        await update.message.reply_text(f"✅ Alert set for {symbol} at ${price:,.3f}")
+        pass
+
+    async def delete_alert_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """
+        Handle the /delete command
+        Usage: /delete <id>
+        Example: /delete 1
+        """
+        if not context.args or len(context.args) != 1:
+            await update.message.reply_text("⚠️ Please provide an alert ID to delete")
+            return
+
+        alert_id = int(context.args[0])
+
+        async with aiofiles.open("alert_list.txt", "r") as f:
+            alerts = await f.readlines()
+
+        if not alerts:
+            await update.message.reply_text("🔕 No alerts set")
+            return
+
+        if alert_id < 1 or alert_id > len(alerts):
+            await update.message.reply_text("⚠️ Invalid alert ID")
+            return
+        # Show confirmation message with buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("Yes", callback_data=f"delete_yes_{alert_id}"),
+                InlineKeyboardButton("No", callback_data="delete_no"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            f"❓ Are you sure you want to delete alert ID {alert_id}?",
+            reply_markup=reply_markup,
+        )
+
+    # Callback query handler to process the button clicks
+    async def button_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        query = update.callback_query
+        await query.answer()
+
+        print("query_data: ", query.data)
+        if query.data.startswith("delete_yes_"):
+            alert_id = int(query.data.split("_")[2])
+
+            async with aiofiles.open("alert_list.txt", "r") as f:
+                alerts = await f.readlines()
+
+            async with aiofiles.open("alert_list.txt", "w") as f:
+                for i, alert in enumerate(alerts):
+                    if i + 1 != alert_id:
+                        await f.write(alert)
+
+            await query.edit_message_text(f"✅ Alert ID {alert_id} deleted")
+        elif query.data == "delete_no":
+            await query.edit_message_text("❌ Deletion cancelled")
+
+    async def monitor_alerts(self, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Background task to monitor price alerts.
+        Checks if current prices are within threshold of alert prices.
+        """
+        try:
+            # Read alerts from file
+            async with aiofiles.open("alert_list.txt", "r") as f:
+                alerts = await f.readlines()
+
+            if not alerts:
+                return
+
+            # Create price bot instance
+            price_bot = CryptoPriceBot()
+
+            # Check each alert
+            for alert in alerts:
+                try:
+                    symbol, target_price = alert.strip().split(",")
+                    target_price = float(target_price)
+
+                    # Get current price
+                    ticker_data = await price_bot.fetch_latest_price(symbol)
+                    if not ticker_data:
+                        continue
+
+                    current_price = ticker_data["current_price"]
+
+                    # Calculate price difference percentage
+                    price_diff_pct = abs(current_price - target_price) / target_price
+
+                    # If price is within threshold, send alert
+                    if price_diff_pct <= self.price_threshold:
+                        alert_message = (
+                            f"🚨 Price Alert!\n"
+                            f"Symbol: {symbol}\n"
+                            f"Target: ${target_price:,.2f}\n"
+                            f"Current: ${current_price:,.2f}\n"
+                            f"Difference: {price_diff_pct:.2f}%\n"
+                            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                        )
+                        # Send alert to all active chats
+                        if context._chat_id:
+                            await self.application.bot.send_message(
+                                chat_id=context._chat_id, text=alert_message
+                            )
+
+                except Exception as e:
+                    print(f"Error processing alert {alert}: {str(e)}")
+                    continue
+
+            # Close price bot
+            await price_bot.close()
+
+        except Exception as e:
+            print(f"Error in monitor_alerts: {str(e)}")
 
     def run(self):
         self.application.run_polling(allowed_updates=Update.ALL_TYPES)
