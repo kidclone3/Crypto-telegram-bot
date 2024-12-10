@@ -7,16 +7,17 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from scr.core.config import settings
+from src.core.config import settings
 
 config_local = context.config
 
-config_local.set_main_option('sqlalchemy.url', str(settings.db_url))
+config_local.set_main_option("sqlalchemy.url", str(settings.db_url))
 
 if config_local.config_file_name is not None:
     fileConfig(config_local.config_file_name)
 
-from scr.core.base import BaseDBModel
+from src.core.base import BaseDBModel
+
 target_metadata = BaseDBModel.metadata
 
 
@@ -46,9 +47,7 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection):
     context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        render_as_batch=True
+        connection=connection, target_metadata=target_metadata, render_as_batch=True
     )
 
     with context.begin_transaction():

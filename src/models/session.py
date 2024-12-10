@@ -2,13 +2,13 @@ from enum import StrEnum
 
 from sqlalchemy.orm import mapped_column, Mapped
 
-from scr.core.db import BaseDBModel
+from src.core.db import BaseDBModel
 
 
 class LoginStatus(StrEnum):
-    LOGINED = 'logined'
-    CONFIRM = 'waiting_qr_login'
-    ERROR = 'error'
+    LOGINED = "logined"
+    CONFIRM = "waiting_qr_login"
+    ERROR = "error"
 
 
 class TGSession(BaseDBModel):

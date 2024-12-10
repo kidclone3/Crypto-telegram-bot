@@ -2,8 +2,8 @@ from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from scr.core.repo import BaseRepo
-from scr.models import TGSession, LoginStatus
+from src.core.repo import BaseRepo
+from src.models import TGSession, LoginStatus
 
 
 class SessionRepo(BaseRepo):
@@ -12,18 +12,18 @@ class SessionRepo(BaseRepo):
     async def get_one_by_phone(
         self, phone: str, session: AsyncSession
     ) -> TGSession | None:
-        return (await session.execute(
-            select(self.model).where(self.model.phone == phone))
+        return (
+            await session.execute(select(self.model).where(self.model.phone == phone))
         ).scalar_one_or_none()
 
-    async def create_one(
-        self, phone: str, qr_login_url: str, session: AsyncSession
-    ):
+    async def create_one(self, phone: str, qr_login_url: str, session: AsyncSession):
         now = datetime.now()
         db_obj = TGSession(
-            created_at=now, updated_at=now,
+            created_at=now,
+            updated_at=now,
             login_status=LoginStatus.CONFIRM.value,
-            phone=phone, qr_login_url=qr_login_url
+            phone=phone,
+            qr_login_url=qr_login_url,
         )
         session.add(db_obj)
         await session.commit()
@@ -31,8 +31,7 @@ class SessionRepo(BaseRepo):
         return db_obj
 
     async def update_login_status(
-        self, tg_session: TGSession, status: LoginStatus,
-        session: AsyncSession
+        self, tg_session: TGSession, status: LoginStatus, session: AsyncSession
     ) -> TGSession:
         tg_session.login_status = status.value
         tg_session.updated_at = datetime.now()

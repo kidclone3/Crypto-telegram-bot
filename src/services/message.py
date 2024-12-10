@@ -1,16 +1,18 @@
 from telethon.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from scr.core.config import MESSAGE_LIMIT
-from scr.schemas.message import (
-    Message, Messages, MessageCreate, 
-    MessageCreateResponseStatus, MessageCreateResponse
+from src.core.config import MESSAGE_LIMIT
+from src.schemas.message import (
+    Message,
+    Messages,
+    MessageCreate,
+    MessageCreateResponseStatus,
+    MessageCreateResponse,
 )
 from .session import session_service
 
 
 class MessageService:
-
     async def get_many(self, phone: str, uname: str, session: AsyncSession):
         await session_service.get_authorized(phone, session)
         client = await session_service.generate_client(phone)
@@ -20,23 +22,20 @@ class MessageService:
         return Messages(
             messages=[
                 Message(
-                    message_text=message.message, is_self=message.out,
-                    username=message._sender.username
+                    message_text=message.message,
+                    is_self=message.out,
+                    username=message._sender.username,
                 )
                 for message in messages
             ]
         )
 
-    async def send_message(
-        self, message_data: MessageCreate, session: AsyncSession
-    ):
+    async def send_message(self, message_data: MessageCreate, session: AsyncSession):
         await session_service.get_authorized(message_data.from_phone, session)
         client = await session_service.generate_client(message_data.from_phone)
         try:
             await client.connect()
-            await client.send_message(
-                message_data.username, message_data.message_text
-            )
+            await client.send_message(message_data.username, message_data.message_text)
             await client.disconnect()
             status = MessageCreateResponseStatus.OK
         except:
