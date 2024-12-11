@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 import ccxt.async_support as ccxt
+from ccxt.base.errors import BadSymbol
 import asyncio
 import pandas as pd
 import io
@@ -9,12 +10,15 @@ import mplfinance as mpf
 
 
 class CryptoPriceBot:
-    def __init__(self, exchange_id: str = "binance"):
-        self.exchange = getattr(ccxt, exchange_id)(
-            {
-                "enableRateLimit": True,
-            }
-        )
+    def __init__(self, exchange_ids: list[str] = ["binance", "okx"]):
+        self.exchanges = [
+            getattr(ccxt, exchange_id)(
+                {
+                    "enableRateLimit": True,
+                }
+            )
+            for exchange_id in exchange_ids
+        ]
         self.chart_style = self._create_chart_style()
 
     async def fetch_ohlcv_data(
@@ -32,7 +36,14 @@ class CryptoPriceBot:
             pd.DataFrame | None: OHLCV data in DataFrame format or None if error
         """
         try:
-            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            try:
+                ohlcv = await self.exchanges[0].fetch_ohlcv(
+                    symbol, timeframe, limit=limit
+                )
+            except BadSymbol as e:
+                ohlcv = await self.exchanges[1].fetch_ohlcv(
+                    symbol, timeframe, limit=limit
+                )
 
             df = pd.DataFrame(
                 ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
@@ -60,9 +71,14 @@ class CryptoPriceBot:
             pd.DataFrame | None: OHLCV data in DataFrame format or None if error
         """
         try:
-            ohlcv = await self.exchange.fetch_ohlcv(
-                symbol + ":USDT", timeframe, limit=limit
-            )
+            try:
+                ohlcv = await self.exchanges[0].fetch_ohlcv(
+                    symbol + ":USDT", timeframe, limit=limit
+                )
+            except BadSymbol as e:
+                ohlcv = await self.exchanges[1].fetch_ohlcv(
+                    symbol + ":USDT", timeframe, limit=limit
+                )
 
             df = pd.DataFrame(
                 ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
@@ -177,7 +193,10 @@ class CryptoPriceBot:
     async def fetch_timeframe_change(self, symbol: str, timeframe: str) -> dict | None:
         """Helper function to fetch price change for a specific timeframe"""
         try:
-            ohlcv = await self.exchange.fetch_ohlcv(symbol, timeframe, limit=2)
+            try:
+                ohlcv = await self.exchanges[0].fetch_ohlcv(symbol, timeframe, limit=2)
+            except BadSymbol as e:
+                ohlcv = await self.exchanges[1].fetch_ohlcv(symbol, timeframe, limit=2)
             if len(ohlcv) >= 2:
                 prev_close = ohlcv[0][4]
                 current_close = ohlcv[1][4]
@@ -206,7 +225,10 @@ class CryptoPriceBot:
         """
         try:
             # Fetch current ticker data
-            ticker = await self.exchange.fetch_ticker(symbol)
+            try:
+                ticker = await self.exchanges[0].fetch_ticker(symbol)
+            except BadSymbol as e:
+                ticker = await self.exchanges[1].fetch_ticker(symbol)
 
             # Fetch price changes for different timeframes concurrently
             timeframes = ["5m", "15m", "1h", "4h", "1d"]
@@ -269,4 +291,6 @@ class CryptoPriceBot:
 
     async def close(self):
         """Close the exchange connection"""
-        await self.exchange.close()
+        # await self.exchanges.close()
+        for exchange in self.exchanges:
+            await exchange.close()
