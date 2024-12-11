@@ -1,10 +1,10 @@
 from src.core.errors import ValidationException
 
-PWD_REQ_MSG = """Двухфакторная авторизация не поддерживается, мы над этим работаем"""
-ALREADY_LOGINED = """Пользователь уже авторизован"""
-SESSION_NO_FOUND = """Сессия не найдена"""
-NOT_AUTHORIZED = """Клиент не авторизован"""
-PHONE_INV_FORMAT = """Номер телефона должен состоять из чисел"""
+PWD_REQ_MSG = """Password is required"""
+ALREADY_LOGINED = """Already logined"""
+SESSION_NO_FOUND = """Session not found"""
+NOT_AUTHORIZED = """Not Authorized"""
+PHONE_INV_FORMAT = """Invalid phone format"""
 
 
 class PasswordRequired(ValidationException):

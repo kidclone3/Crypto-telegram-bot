@@ -10,7 +10,7 @@ import pandas as pd
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
 from src.utils import format_price_message, symbol_complete
-
+from src.core.db import motor_client
 
 START_MSG = (
     "👋 Welcome to the Crypto Price Bot!\n\n"
@@ -22,6 +22,7 @@ START_MSG = (
     "/filter - Filter price changes by timeframe and percentage\n"
     "\t E.g: /f 15m 1 \n"
     "/c or /chart - Get price chart for a cryptocurrency\n"
+    "/s or /signal - Get trading signal for a cryptocurrency\n"
     "/h or /help - Show this help message\n"
     "/ping - Check if the bot is online"
 )
@@ -30,9 +31,14 @@ bot: TelegramClient = TelegramClient("bot", settings.api_id, settings.api_hash).
     bot_token=settings.bot_token
 )
 
+db = motor_client["crypto"]
+
 
 @bot.on(events.NewMessage(pattern="/start"))
 async def send_welcome(event):
+    # add a run loop to monitor price
+    asyncio.create_task(monitor_price(event.chat_id))
+
     await event.reply(START_MSG)
 
 
@@ -45,21 +51,20 @@ async def send_welcome(event):
 #     await event.reply(result)
 
 
-@bot.on(events.NewMessage(pattern="/ping"))
+@bot.on(events.NewMessage(pattern="^/ping"))
 async def echo_all(event):
     await event.reply("pong")
 
 
-@bot.on(events.NewMessage(pattern="/(a|alert)"))
+@bot.on(events.NewMessage(pattern="^/(a|alert)"))
 async def add_alert(event):
     args = event.message.message.split(" ")
     if len(args) not in [1, 3]:
         await event.reply("Invalid alert format")
 
     if len(args) == 1:
-        # Print the list of alerts
-        async with aiofiles.open("alert_list.txt", "r") as f:
-            alerts = await f.readlines()
+        cursor = db.alerts.find({"chat_id": event.chat_id})
+        alerts = await cursor.to_list(length=1000)
         if not alerts:
             await event.reply("🔕 No alerts set")
             return
@@ -68,7 +73,7 @@ async def add_alert(event):
         table_body = []
         # Add numbers to the alerts
         for i, alert in enumerate(alerts):
-            symbol, price = alert.split(",")
+            symbol, price = alert.get("symbol"), alert.get("price")
             table_body.append([i + 1, symbol, f"${price}"])
 
         # Convert table to string
@@ -81,8 +86,8 @@ async def add_alert(event):
         if args[1].isnumeric():
             # Update alert by index
             alert_id = int(args[1].isnumeric())
-            async with aiofiles.open("alert_list.txt", "r") as f:
-                alerts = await f.readlines()
+            cursor = db.alerts.find({"chat_id": event.chat_id})
+            alerts = await cursor.to_list(length=1000)
 
             if not alerts:
                 await event.reply("🔕 No alerts set")
@@ -91,11 +96,14 @@ async def add_alert(event):
             if alert_id < 1 or alert_id > len(alerts):
                 await event.reply("⚠️ Invalid alert ID")
                 return
-            symbol = alerts[alert_id - 1].split(",")[0]
-            alerts[alert_id - 1] = f"{symbol},{price}\n"
+            symbol = alerts[alert_id - 1].get("symbol")
 
-            async with aiofiles.open("alert_list.txt", "w") as f:
-                await f.writelines(alerts)
+            db.alerts.update_one(
+                {
+                    "_id": alerts[alert_id - 1]["_id"],
+                },
+                {"$set": {"price": price}},
+            )
 
             # Send confirmation message
             await event.reply(
@@ -105,16 +113,15 @@ async def add_alert(event):
             return
         symbol = symbol_complete(args[1].upper())
 
-        async with aiofiles.open("alert_list.txt", "a") as f:
-            await f.write(f"{symbol},{price}\n")
+        db.alerts.insert_one(
+            {"symbol": symbol, "price": price, "chat_id": event.chat_id}
+        )
 
         # Send confirmation message
         await event.reply(f"✅ Alert 1 set for {symbol} at ${price:,.3f}")
 
-    await event.reply("Adding alert")
 
-
-@bot.on(events.NewMessage(pattern="/d|/delete"))
+@bot.on(events.NewMessage(pattern="^/(d|delete)"))
 async def delete_alert(event):
     args = event.message.text.split()
     if len(args) != 2:
@@ -127,8 +134,8 @@ async def delete_alert(event):
         await event.reply("⚠️ Invalid alert ID")
         return
 
-    async with aiofiles.open("alert_list.txt", "r") as f:
-        alerts = await f.readlines()
+    cursor = db.alerts.find({"chat_id": event.chat_id})
+    alerts = await cursor.to_list(length=1000)
 
     if not alerts:
         await event.reply("🔕 No alerts set")
@@ -156,30 +163,31 @@ async def delete_alert(event):
 async def callback_handler(event):
     # Check if the callback data starts with 'delete_yes_'
     if event.data.startswith(b"delete_yes_"):
-        alert_id = int(event.data.decode("utf-8").split("_")[-1])
+        delete_id = int(event.data.decode("utf-8").split("_")[-1])
 
-        # Here, you would handle the deletion logic
-        async with aiofiles.open("alert_list.txt", "r") as f:
-            alerts = await f.readlines()
+        cursor = db.alerts.find({"chat_id": event.chat_id})
+        alerts = await cursor.to_list(length=1000)
 
-        if len(alerts) < alert_id:
+        if len(alerts) < delete_id:
             await event.answer("⚠️ Alert ID not found.")
             return
 
         # Remove the alert from the list
-        del alerts[alert_id - 1]  # Adjust for zero-based index
+        remove_alert = alerts[delete_id - 1]
 
-        async with aiofiles.open("alert_list.txt", "w") as f:
-            await f.writelines(alerts)
+        db.alerts.delete_one({"_id": remove_alert["_id"]})
 
         await event.answer("✅ Alert deleted successfully.")
 
     elif event.data == b"delete_no":
         await event.answer("❌ Deletion canceled.")
 
+    await event.delete()
 
-@bot.on(events.NewMessage(pattern="/p|/price"))
+
+@bot.on(events.NewMessage(pattern="^/(p|price)"))
 async def price_command(event):
+    print("Chatid", event.chat_id)
     try:
         # Check if symbol is provided
         args = event.message.text.split()
@@ -210,7 +218,7 @@ async def price_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern="/f|/filter"))
+@bot.on(events.NewMessage(pattern="^/(f|filter)"))
 async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
     msg = await event.reply("📊 Fetching price data...")
     try:
@@ -253,7 +261,7 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern="/c|/chart"))
+@bot.on(events.NewMessage(pattern="^/(c|chart)"))
 async def chart_command(event):
     try:
         args = event.message.text.split()
@@ -398,3 +406,60 @@ async def chart_command(event):
 
     except Exception as e:
         await event.reply(f"❌ Error: {str(e)}")
+
+
+async def monitor_price(chat, price_threshold=0.001):
+    """Monitor price alerts and send notifications
+
+    Args:
+        chat (str): Chat ID to send alerts to
+        price_threshold (float, optional): _description_. Defaults to 0.001. as 0.1% difference
+    """
+    while True:
+        # async with aiofiles.open("alert_list.txt", "r") as f:
+        #     alerts = await f.readlines()
+        cursor = db.alerts.find({"chat_id": chat})
+        alerts = await cursor.to_list(length=1000)
+
+        if not alerts:
+            await asyncio.sleep(60)
+            continue
+
+        price_bot = CryptoPriceBot()
+
+        for alert in alerts:
+            try:
+                symbol, target_price = alert.get("symbol"), alert.get("price")
+                target_price = float(target_price)
+
+                # Get current price
+                ticker_data = await price_bot.fetch_latest_price(symbol)
+                if not ticker_data:
+                    continue
+
+                current_price = ticker_data["current_price"]
+                # Calculate price difference percentage
+                price_diff_pct = abs(current_price - target_price) / target_price
+                # If price is within threshold, send alert
+                if price_diff_pct <= price_threshold:
+                    alert_message = (
+                        f"🚨 Price Alert!\n"
+                        f"Symbol: {symbol}\n"
+                        f"Target: ${target_price:,.4f}\n"
+                        f"Current: ${current_price:,.4f}\n"
+                        f"Difference: {price_diff_pct:.4f}%\n"
+                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                    )
+                    # Send alert to all active chats
+                    await bot.send_message(chat, message=alert_message)
+
+            except Exception as e:
+                print(f"Error processing alert {alert}: {str(e)}")
+                continue
+        await price_bot.close()
+        await asyncio.sleep(60)
+
+
+@bot.on(events.NewMessage(pattern="/(s|signal)"))
+async def signal_command(event):
+    pass

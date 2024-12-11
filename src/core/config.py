@@ -8,9 +8,7 @@ MESSAGE_LIMIT = 50
 
 
 class Config(BaseSettings):
-    model_config = ConfigDict(
-        env_file=".env",
-    )
+    model_config = ConfigDict(env_file=".env", extra="allow")
     api_id: int
     api_hash: str
     bot_token: str
