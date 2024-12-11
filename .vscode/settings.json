@@ -4,5 +4,8 @@
     "python.envFile": "${workspaceFolder}/.env",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/src"
-    ]
+    ],
+    "docker.host": "unix:///Users/delus/.colima/docker.sock",
+    "docker.context": "colima",
+    "docker.dockerPath": "/usr/bin/docker",
 }
