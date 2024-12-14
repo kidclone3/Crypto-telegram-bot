@@ -189,7 +189,6 @@ async def callback_handler(event):
 
 @bot.on(events.NewMessage(pattern="^/(?!ping$)(p|price)"))
 async def price_command(event):
-    print("Chatid", event.chat_id)
     try:
         # Check if symbol is provided
         args = event.message.text.split()
@@ -212,6 +211,7 @@ async def price_command(event):
             return
 
         # Format the message
+        # TODO: The data to message is not correct: Impossible to get the 24h change from the ticker data
         message = format_price_message(ticker_data)
         # delete the latest bot message and send the new message
         await msg.delete()
