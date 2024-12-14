@@ -1,4 +1,5 @@
 import asyncio
+from collections import defaultdict
 from datetime import datetime
 import time
 from tabulate import tabulate
@@ -458,39 +459,43 @@ async def monitor_price(event, price_threshold=0.001):
         #     alerts = await f.readlines()
         cursor = db.alerts.find({"chat_id": chat_id})
         alerts = await cursor.to_list(length=1000)
-
         if not alerts:
             await asyncio.sleep(60 * 5)
             continue
 
+        # mapping to dict
+        alerts_dict = defaultdict(list)
+        for alert in alerts:
+            alerts_dict[alert["symbol"]].append(float(alert.get("price")))
+
         price_bot = CryptoPriceBot()
 
-        for alert in alerts:
+        for symbol, prices in alerts_dict.items():
             try:
-                symbol, target_price = alert.get("symbol"), alert.get("price")
-                target_price = float(target_price)
+                # symbol, target_price = alert.get("symbol"), alert.get("price")
+                # target_price = float(target_price)
 
                 # Get current price
                 ticker_data = await price_bot.fetch_latest_price(symbol)
                 if not ticker_data:
                     continue
-
                 current_price = ticker_data["current_price"]
-                # Calculate price difference percentage
-                price_diff_pct = abs(current_price - target_price) / target_price
-                # If price is within threshold, send alert
-                if price_diff_pct <= price_threshold:
-                    alert_message = (
-                        f"🚨 Price Alert!\n"
-                        f"Exchange: {ticker_data['exchange']}\n"
-                        f"Symbol: {symbol}\n"
-                        f"Target: ${target_price:,.4f}\n"
-                        f"Current: ${current_price:,.4f}\n"
-                        f"Difference: {price_diff_pct:.4f}%\n"
-                        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
-                    )
-                    # Send alert to all active chats
-                    await bot.send_message(chat_id, message=alert_message)
+                for target_price in prices:
+                    # Calculate price difference percentage
+                    price_diff_pct = abs(current_price - target_price) / target_price
+                    # If price is within threshold, send alert
+                    if price_diff_pct <= price_threshold:
+                        alert_message = (
+                            f"🚨 Price Alert!\n"
+                            f"Exchange: {ticker_data['exchange']}\n"
+                            f"Symbol: {symbol}\n"
+                            f"Target: ${target_price:,.4f}\n"
+                            f"Current: ${current_price:,.4f}\n"
+                            f"Difference: {price_diff_pct:.4f}%\n"
+                            f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                        )
+                        # Send alert to all active chats
+                        await bot.send_message(chat_id, message=alert_message)
 
             except Exception as e:
                 print(f"Error processing alert {alert}: {str(e)}")
