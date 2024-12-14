@@ -37,7 +37,7 @@ db = motor_client["crypto"]
 @bot.on(events.NewMessage(pattern="^/start$"))
 async def send_welcome(event):
     # add a run loop to monitor price
-    asyncio.create_task(monitor_price(event.chat_id))
+    # asyncio.create_task(monitor_price(event.chat_id))
     print("hi")
     await event.reply(START_MSG)
 
@@ -444,17 +444,19 @@ async def signal_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-async def monitor_price(chat, price_threshold=0.001):
+@bot.on(events.NewMessage)
+async def monitor_price(event, price_threshold=0.001):
     """Monitor price alerts and send notifications
 
     Args:
         chat (str): Chat ID to send alerts to
         price_threshold (float, optional): _description_. Defaults to 0.001. as 0.1% difference
     """
+    chat_id = event.chat_id
     while True:
         # async with aiofiles.open("alert_list.txt", "r") as f:
         #     alerts = await f.readlines()
-        cursor = db.alerts.find({"chat_id": chat})
+        cursor = db.alerts.find({"chat_id": chat_id})
         alerts = await cursor.to_list(length=1000)
 
         if not alerts:
@@ -488,7 +490,7 @@ async def monitor_price(chat, price_threshold=0.001):
                         f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
                     )
                     # Send alert to all active chats
-                    await bot.send_message(chat, message=alert_message)
+                    await bot.send_message(chat_id, message=alert_message)
 
             except Exception as e:
                 print(f"Error processing alert {alert}: {str(e)}")
