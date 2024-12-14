@@ -7,10 +7,13 @@ import pandas as pd
 import io
 import matplotlib.pyplot as plt
 import mplfinance as mpf
+import numpy as np
+
+from src.services.custom_indicators.pinbar_detector import PinbarDetector
 
 
 class CryptoPriceBot:
-    def __init__(self, exchange_ids: list[str] = ["binance", "okx"]):
+    def __init__(self, exchange_ids: list[str] = ["binance", "okx", "bybit"]):
         self.exchanges = [
             getattr(ccxt, exchange_id)(
                 {
@@ -20,10 +23,17 @@ class CryptoPriceBot:
             for exchange_id in exchange_ids
         ]
         self.chart_style = self._create_chart_style()
+        self.pinbar_patterns = ["Pinbar", "Hammer", "Inverted Hammer"]
+
+        self.pinbar_detector = PinbarDetector(
+            use_custom_settings=True,
+            custom_max_nose_body_size=0.33,
+            custom_nose_body_position=0.4,
+        )
 
     async def fetch_ohlcv_data(
         self, symbol: str, timeframe: str = "1h", limit: int = 100
-    ) -> pd.DataFrame | None:
+    ) -> tuple[pd.DataFrame, str] | None:
         """
         Fetch OHLCV data and convert to DataFrame for charting
 
@@ -34,23 +44,29 @@ class CryptoPriceBot:
 
         Returns:
             pd.DataFrame | None: OHLCV data in DataFrame format or None if error
+            str: Exchange name
         """
         try:
+            exchange = self.exchanges[0].id
             try:
                 ohlcv = await self.exchanges[0].fetch_ohlcv(
                     symbol, timeframe, limit=limit
                 )
-            except BadSymbol as e:
-                ohlcv = await self.exchanges[1].fetch_ohlcv(
-                    symbol, timeframe, limit=limit
-                )
+            except (BadSymbol, TimeoutError) as e:
+                for i in range(1, len(self.exchanges)):
+                    ohlcv = await self.exchanges[i].fetch_ohlcv(
+                        symbol, timeframe, limit=limit
+                    )
+                    if ohlcv:
+                        exchange = self.exchanges[i].id
+                        break
 
             df = pd.DataFrame(
                 ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
             )
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
-            return df
+            return df, exchange
 
         except Exception as e:
             print(f"Error fetching OHLCV data for {symbol}: {str(e)}")
@@ -58,7 +74,7 @@ class CryptoPriceBot:
 
     async def fetch_future_ohlcv_data(
         self, symbol: str, timeframe: str = "1h", limit: int = 100
-    ) -> pd.DataFrame | None:
+    ) -> tuple[pd.DataFrame, str] | None:
         """
         Fetch OHLCV data for future and convert to DataFrame for charting
 
@@ -70,26 +86,7 @@ class CryptoPriceBot:
         Returns:
             pd.DataFrame | None: OHLCV data in DataFrame format or None if error
         """
-        try:
-            try:
-                ohlcv = await self.exchanges[0].fetch_ohlcv(
-                    symbol + ":USDT", timeframe, limit=limit
-                )
-            except BadSymbol as e:
-                ohlcv = await self.exchanges[1].fetch_ohlcv(
-                    symbol + ":USDT", timeframe, limit=limit
-                )
-
-            df = pd.DataFrame(
-                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
-            )
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df.set_index("timestamp", inplace=True)
-            return df
-
-        except Exception as e:
-            print(f"Error fetching OHLCV data for {symbol}: {str(e)}")
-            return None
+        return await self.fetch_ohlcv_data(symbol + ":USDT", timeframe, limit)
 
     def _create_chart_style(self) -> dict:
         """Create and return the MPLFinance style configuration"""
@@ -115,12 +112,20 @@ class CryptoPriceBot:
                 "axes.grid.axis": "y",
                 "grid.linewidth": 0.4,
                 "grid.color": "#a0a0a0",
+                "axes.titlelocation": "left",  # Title location set to left
+                "axes.titley": 1.0,  # Title position set to top
             },
             figcolor="white",
         )
 
     async def generate_chart(
-        self, df, symbol: str, timeframe: str, figsize: tuple = (12, 8), dpi: int = 200
+        self,
+        df,
+        symbol: str,
+        timeframe: str,
+        exchange: str = "binance",
+        figsize: tuple = (12, 8),
+        dpi: int = 200,
     ) -> Optional[io.BytesIO]:
         """
         Generate a candlestick chart with volume.
@@ -143,6 +148,46 @@ class CryptoPriceBot:
             if df is None or df.empty:
                 raise ValueError("Empty or invalid DataFrame provided")
 
+            signals, colors = self.pinbar_detector.detect(df)
+
+            bullish_signals, bearish_signals = [], []
+            for i in range(len(signals)):
+                if signals[i]:
+                    if colors[i] == 0:
+                        bullish_signals.append(signals[i])
+                        bearish_signals.append(np.nan)
+                    else:
+                        bearish_signals.append(signals[i])
+                        bullish_signals.append(np.nan)
+                else:
+                    bullish_signals.append(np.nan)
+                    bearish_signals.append(np.nan)
+
+            ic = []
+            if not np.all(np.isnan(bullish_signals)):
+                ic.append(
+                    mpf.make_addplot(
+                        bullish_signals,
+                        type="scatter",
+                        markersize=100,
+                        marker="^",
+                        color="g",
+                        panel=0,
+                    )
+                )
+
+            if not np.all(np.isnan(bearish_signals)):
+                ic.append(
+                    mpf.make_addplot(
+                        bearish_signals,
+                        type="scatter",
+                        markersize=100,
+                        marker="v",
+                        color="r",
+                        panel=0,
+                    )
+                )
+
             # Create buffer for the image
             buf = io.BytesIO()
 
@@ -150,13 +195,14 @@ class CryptoPriceBot:
             fig, axlist = mpf.plot(
                 df,
                 type="candle",
-                title=f"{symbol} {timeframe} Chart",
+                title=f"{exchange}: {symbol} {timeframe} Chart",
                 volume=True,
                 style=self.chart_style,
                 returnfig=True,
                 figsize=figsize,
                 panel_ratios=(3, 1),
                 tight_layout=True,
+                addplot=ic,
             )
 
             # Save to buffer with error handling
@@ -193,20 +239,18 @@ class CryptoPriceBot:
     async def fetch_timeframe_change(self, symbol: str, timeframe: str) -> dict | None:
         """Helper function to fetch price change for a specific timeframe"""
         try:
-            try:
-                ohlcv = await self.exchanges[0].fetch_ohlcv(symbol, timeframe, limit=2)
-            except BadSymbol as e:
-                ohlcv = await self.exchanges[1].fetch_ohlcv(symbol, timeframe, limit=2)
+            ohlcv, exchange = await self.fetch_ohlcv_data(symbol, timeframe, limit=2)
             if len(ohlcv) >= 2:
-                prev_close = ohlcv[0][4]
-                current_close = ohlcv[1][4]
+                prev_close = ohlcv.iloc[0]["close"]
+                current_close = ohlcv.iloc[1]["close"]
                 pct_change = ((current_close - prev_close) / prev_close) * 100
                 return {
                     "timeframe": timeframe,
                     "prev_price": prev_close,
                     "current_price": current_close,
                     "pct_change": round(pct_change, 2),
-                    "timestamp": ohlcv[1][0],
+                    "timestamp": ohlcv.index[1],
+                    "exchange": exchange,
                 }
             return None
         except Exception as e:
@@ -225,10 +269,15 @@ class CryptoPriceBot:
         """
         try:
             # Fetch current ticker data
+            exchange = self.exchanges[0].id
             try:
                 ticker = await self.exchanges[0].fetch_ticker(symbol)
-            except BadSymbol as e:
-                ticker = await self.exchanges[1].fetch_ticker(symbol)
+            except (BadSymbol, TimeoutError) as e:
+                for i in range(1, len(self.exchanges)):
+                    ticker = await self.exchanges[i].fetch_ticker(symbol)
+                    if ticker:
+                        exchange = self.exchanges[i].id
+                        break
 
             # Fetch price changes for different timeframes concurrently
             timeframes = ["5m", "15m", "1h", "4h", "1d"]
@@ -257,6 +306,7 @@ class CryptoPriceBot:
                 "ask": ticker["ask"],
                 "timestamp": ticker["timestamp"],
                 "timeframe_changes": changes,
+                "exchange": exchange,
             }
 
         except Exception as e:

@@ -5,7 +5,7 @@ import time
 
 def symbol_complete(symbol: str) -> str:
     """Complete the symbol with /USDT if not present"""
-    result = symbol + "/USDT" if not symbol.endswith("/USDT") else symbol
+    result = symbol + "/USDT" if not symbol.endswith("USDT") else symbol
     return result.upper()
 
 

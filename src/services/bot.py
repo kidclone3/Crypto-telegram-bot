@@ -1,12 +1,12 @@
 import asyncio
 from datetime import datetime
 import time
-import aiofiles
 from tabulate import tabulate
 from telethon import Button, TelegramClient, events
 from telethon.types import DocumentAttributeFilename
 import pandas as pd
 
+from src.services.indicators import quant_agent
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
 from src.utils import format_price_message, symbol_complete
@@ -27,18 +27,18 @@ START_MSG = (
     "/ping - Check if the bot is online"
 )
 
-bot: TelegramClient = TelegramClient("bot", settings.api_id, settings.api_hash).start(
-    bot_token=settings.bot_token
-)
+bot: TelegramClient = TelegramClient(
+    "bot", settings.api_id, settings.api_hash, timeout=5, auto_reconnect=True
+).start(bot_token=settings.bot_token)
 
 db = motor_client["crypto"]
 
 
-@bot.on(events.NewMessage(pattern="/start"))
+@bot.on(events.NewMessage(pattern="^/start$"))
 async def send_welcome(event):
     # add a run loop to monitor price
     asyncio.create_task(monitor_price(event.chat_id))
-
+    print("hi")
     await event.reply(START_MSG)
 
 
@@ -51,7 +51,7 @@ async def send_welcome(event):
 #     await event.reply(result)
 
 
-@bot.on(events.NewMessage(pattern="^/ping"))
+@bot.on(events.NewMessage(pattern="^/ping$"))
 async def echo_all(event):
     await event.reply("pong")
 
@@ -152,9 +152,10 @@ async def delete_alert(event):
             Button.inline("No", "delete_no"),
         ]
     ]
-
+    symbol = alerts[alert_id - 1].get("symbol")
+    price = alerts[alert_id - 1].get("price")
     await event.reply(
-        f"❓ Are you sure you want to delete alert ID {alert_id}?",
+        f"❓ Are you sure you want to delete alert ID {alert_id}: {symbol} - {price}?",
         buttons=keyboard,
     )
 
@@ -185,7 +186,7 @@ async def callback_handler(event):
     await event.delete()
 
 
-@bot.on(events.NewMessage(pattern="^/(p|price)"))
+@bot.on(events.NewMessage(pattern="^/(?!ping$)(p|price)"))
 async def price_command(event):
     print("Chatid", event.chat_id)
     try:
@@ -276,21 +277,15 @@ async def chart_command(event):
         symbol = symbol_complete(args[1].upper())
         timeframe = args[2].lower() if len(args) > 2 else "1h"
 
-        # Validate timeframe
-        valid_timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"]
-        if timeframe not in valid_timeframes:
-            await event.reply(
-                f"⚠️ Invalid timeframe. Please choose from: {', '.join(valid_timeframes)}"
-            )
-            return
-
         # Send loading message
         msg = await event.reply(f"📊 Generating {timeframe} chart for {symbol}...")
 
         # Get candle data and create chart
         price_bot = CryptoPriceBot()
-        df = await price_bot.fetch_ohlcv_data(symbol, timeframe)
-        df_future = await price_bot.fetch_future_ohlcv_data(symbol, timeframe)
+        df, exchange = await price_bot.fetch_ohlcv_data(symbol, timeframe)
+        df_future, ft_exchange = await price_bot.fetch_future_ohlcv_data(
+            symbol, timeframe
+        )
         await price_bot.close()
 
         if df is None or df.empty:
@@ -327,7 +322,7 @@ async def chart_command(event):
         )
 
         # Create and send chart
-        chart_buf = await price_bot.generate_chart(df, symbol, timeframe)
+        chart_buf = await price_bot.generate_chart(df, symbol, timeframe, exchange)
         if chart_buf is None:
             await msg.edit("❌ Error generating chart")
             return
@@ -352,7 +347,9 @@ async def chart_command(event):
 
         # Chart future data
         if df_future is not None:
-            chart_buf = await price_bot.generate_chart(df_future, symbol, timeframe)
+            chart_buf = await price_bot.generate_chart(
+                df_future, symbol, timeframe, exchange
+            )
 
             # Calculate some basic statistics
             change_pct = (
@@ -408,6 +405,45 @@ async def chart_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
+@bot.on(events.NewMessage(pattern="^/(s|signal)"))
+async def signal_command(event):
+    try:
+        args = event.message.text.split()
+        if len(args) < 2 or len(args) > 3:
+            await event.reply("⚠️ Please provide a symbol. Example: /signal btc\n")
+            return
+        # Parse arguments
+        symbol = symbol_complete(args[1].upper())
+        timeframe = args[2].lower() if len(args) > 2 else "1h"
+
+        # Send loading message
+        msg = await event.reply(f"🔎 Finding signal for {symbol}...")
+
+        # Get candle data and create chart
+        price_bot = CryptoPriceBot()
+        df, _ = await price_bot.fetch_ohlcv_data(symbol, timeframe)
+        await price_bot.close()
+
+        if df is None or df.empty:
+            await msg.edit(f"❌ Unable to fetch data for {symbol}")
+            return
+
+        # Call indicators.py to get signals
+        signals = await quant_agent(df)
+
+        # Delete loading message and send chart
+        await msg.delete()
+        await event.reply(
+            f"📈 Signals for {symbol} ({timeframe}):\n"
+            f"Current Price: ${df['close'].iloc[-1]:,.4f}\n"
+            f"\n\n{signals}",
+            parse_mode="html",
+        )
+
+    except Exception as e:
+        await event.reply(f"❌ Error: {str(e)}")
+
+
 async def monitor_price(chat, price_threshold=0.001):
     """Monitor price alerts and send notifications
 
@@ -422,7 +458,7 @@ async def monitor_price(chat, price_threshold=0.001):
         alerts = await cursor.to_list(length=1000)
 
         if not alerts:
-            await asyncio.sleep(60)
+            await asyncio.sleep(60 * 5)
             continue
 
         price_bot = CryptoPriceBot()
@@ -444,6 +480,7 @@ async def monitor_price(chat, price_threshold=0.001):
                 if price_diff_pct <= price_threshold:
                     alert_message = (
                         f"🚨 Price Alert!\n"
+                        f"Exchange: {ticker_data['exchange']}\n"
                         f"Symbol: {symbol}\n"
                         f"Target: ${target_price:,.4f}\n"
                         f"Current: ${current_price:,.4f}\n"
@@ -458,8 +495,3 @@ async def monitor_price(chat, price_threshold=0.001):
                 continue
         await price_bot.close()
         await asyncio.sleep(60)
-
-
-@bot.on(events.NewMessage(pattern="/(s|signal)"))
-async def signal_command(event):
-    pass
