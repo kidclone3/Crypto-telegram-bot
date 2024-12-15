@@ -1,6 +1,9 @@
 import asyncio
 from collections import defaultdict
+import copy
 from datetime import datetime
+import json
+from operator import is_
 import time
 from tabulate import tabulate
 from telethon import Button, TelegramClient, events
@@ -24,9 +27,15 @@ START_MSG = (
     "\t E.g: /f 15m 1 \n"
     "/c or /chart - Get price chart for a cryptocurrency\n"
     "/s or /signal - Get trading signal for a cryptocurrency\n"
-    "/h or /help - Show this help message\n"
+    "/config - Configure the bot\n"
     "/ping - Check if the bot is online"
 )
+
+DEFAULT_CONFIG = {
+    "is_alert_on": False,
+    "price_threshold": 0.001,
+    "alert_interval": 1,
+}
 
 bot: TelegramClient = TelegramClient(
     "bot", settings.api_id, settings.api_hash, timeout=5, auto_reconnect=True
@@ -35,29 +44,82 @@ bot: TelegramClient = TelegramClient(
 db = motor_client["crypto"]
 
 
-@bot.on(events.NewMessage(pattern="^/start$"))
+@bot.on(events.NewMessage(pattern=r"^\/start$"))
 async def send_welcome(event):
     # add a run loop to monitor price
     # asyncio.create_task(monitor_price(event.chat_id))
-    print("hi")
+
+    # Check the config for the chat
+    chat_id = event.chat_id
+
+    config = await db.config.find_one({"chat_id": chat_id})
+
+    if not config:
+        await db.config.insert_one({"chat_id": chat_id, **DEFAULT_CONFIG})
+
+    if config:
+        is_alert_on = config.get("is_alert_on")
+        price_threshold = config.get("price_threshold")
+        alert_interval = config.get("alert_interval")
+
+        if is_alert_on:
+            asyncio.create_task(monitor_price(event, price_threshold, alert_interval))
+
     await event.reply(START_MSG)
 
 
-# @bot.on(events.NewMessage(pattern=QUERY_PATTERN))
-# async def parse_request(event):
-#     try:
-#         result = await parser.parse_by_query(event.text)
-#     except NotImplementedError as e:
-#         result = e.args[0]
-#     await event.reply(result)
-
-
-@bot.on(events.NewMessage(pattern="^/ping$"))
+@bot.on(events.NewMessage(pattern=r"^\/ping$"))
 async def echo_all(event):
     await event.reply("pong")
 
 
-@bot.on(events.NewMessage(pattern="^/(a|alert)"))
+@bot.on(events.NewMessage(pattern=r"^\/config"))
+async def config_command(event):
+    args = event.message.text.split()
+    # Get the chat_id
+    chat_id = event.chat_id
+
+    # get the config for the chat
+    config = await db.config.find_one({"chat_id": chat_id})
+
+    if len(args) == 1:
+        if not config:
+            await event.reply("⚠️ No configuration found.")
+            return
+        else:
+            print_config = copy.deepcopy(config)
+            del print_config["_id"]
+            del print_config["chat_id"]
+
+            await event.reply(
+                f"🔧 Configuration for you:\n"
+                f"{json.dumps(print_config, indent=4, default=str)}"
+            )
+    elif len(args) == 3:
+        # Set the configuration
+
+        config_key = args[1]
+        config_value = args[2]
+
+        if config_key not in config.keys():
+            await event.reply("⚠️ Invalid configuration key.")
+            return
+
+        if config_key == "is_alert_on":
+            config_value = config_value.lower() == "true"
+        elif config_key == "price_threshold":
+            config_value = float(config_value)
+        elif config_key == "alert_interval":
+            config_value = int(config_value)
+
+        db.config.update_one(
+            {"chat_id": chat_id},
+            {"$set": {config_key: config_value}},
+        )
+        await event.reply(f"✅ Configuration updated: {config_key} = {config_value}")
+
+
+@bot.on(events.NewMessage(pattern=r"^\/(a|alert)"))
 async def add_alert(event):
     args = event.message.message.split(" ")
     if len(args) not in [1, 3]:
@@ -122,7 +184,7 @@ async def add_alert(event):
         await event.reply(f"✅ Alert 1 set for {symbol} at ${price:,.3f}")
 
 
-@bot.on(events.NewMessage(pattern="^/(d|delete)"))
+@bot.on(events.NewMessage(pattern=r"^\/(d|delete)"))
 async def delete_alert(event):
     args = event.message.text.split()
     if len(args) != 2:
@@ -187,7 +249,7 @@ async def callback_handler(event):
     await event.delete()
 
 
-@bot.on(events.NewMessage(pattern="^/(?!ping$)(p|price)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?!ping$)(p|price)"))
 async def price_command(event):
     try:
         # Check if symbol is provided
@@ -220,7 +282,7 @@ async def price_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern="^/(f|filter)"))
+@bot.on(events.NewMessage(pattern=r"^\/(f|filter)"))
 async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
     msg = await event.reply("📊 Fetching price data...")
     try:
@@ -263,7 +325,7 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern="^/(c|chart)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?!config\b)(c|chart)"))
 async def chart_command(event):
     try:
         args = event.message.text.split()
@@ -406,7 +468,7 @@ async def chart_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern="^/(s|signal)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?!start\b)(s|signal)"))
 async def signal_command(event):
     try:
         args = event.message.text.split()
@@ -445,14 +507,21 @@ async def signal_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage)
-async def monitor_price(event, price_threshold=0.001):
+# @bot.on(events.NewMessage)
+async def monitor_price(event, price_threshold=0.001, alert_interval=1):
     """Monitor price alerts and send notifications
 
     Args:
         chat (str): Chat ID to send alerts to
         price_threshold (float, optional): _description_. Defaults to 0.001. as 0.1% difference
     """
+    config = await db.config.find_one({"chat_id": event.chat_id})
+    if config:
+        price_threshold = config.get("price_threshold")
+        is_active = config.get("is_alert_on")
+
+    if not is_active:
+        return
     chat_id = event.chat_id
     while True:
         # async with aiofiles.open("alert_list.txt", "r") as f:
@@ -460,7 +529,7 @@ async def monitor_price(event, price_threshold=0.001):
         cursor = db.alerts.find({"chat_id": chat_id})
         alerts = await cursor.to_list(length=1000)
         if not alerts:
-            await asyncio.sleep(60 * 5)
+            await asyncio.sleep(60 * alert_interval)  # sleep for alert_interval minutes
             continue
 
         # mapping to dict
@@ -501,4 +570,4 @@ async def monitor_price(event, price_threshold=0.001):
                 print(f"Error processing alert {alert}: {str(e)}")
                 continue
         await price_bot.close()
-        await asyncio.sleep(60)
+        await asyncio.sleep(60 * alert_interval)
