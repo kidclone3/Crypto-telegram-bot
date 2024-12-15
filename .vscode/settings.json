@@ -3,9 +3,18 @@
     "python.analysis.autoImportCompletions": true,
     "python.envFile": "${workspaceFolder}/.env",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/src"
+        "${workspaceFolder}"
     ],
-    "docker.host": "unix:///Users/delus/.colima/docker.sock",
-    "docker.context": "colima",
+    "python.analysis.useLibraryCodeForTypes": true,
+    "terminal.integrated.env.linux": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
     "docker.dockerPath": "/usr/bin/docker",
+    "ruff.configuration": "pyproject.toml",
+    "editor.formatOnSave": true,
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+    },
+    "python.analysis.importFormat": "absolute",
+    "python.analysis.showOnlyDirectDependenciesInAutoImport": true
 }
