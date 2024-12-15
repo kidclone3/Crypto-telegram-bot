@@ -28,5 +28,5 @@ watchmedo auto-restart --directory=./src --pattern='*.py' --recursive -- python 
 
 - [x] Real time price alerts
 - [ ] Use tradingview charting library
-- [ ] Store user data in MongoDB
+- [x] Store user data in MongoDB
 - [ ] Store fetched data in InfluxDB
