@@ -16,28 +16,61 @@ class MonitorService:
         self.user_last_alert = {}
 
     async def get_all_monitors(self, chat_id) -> list[dict]:
-        return await self.db.alerts.find({"chat_id": chat_id}).to_list(length=None)
+        query = await self.db.alerts.find_one({"chat_id": chat_id})
+        if query:
+            return query.get("data", [])
+        return []
 
-    async def add_monitor(self, chat_id: int, symbol: str, price: float):
-        return await self.db.alerts.insert_one(
-            {"chat_id": chat_id, "symbol": symbol, "price": price}
-        )
+    @classmethod
+    async def add_monitor(cls, db, chat_id: int, symbol: str, price: float):
+        # find if the user already has a monitor for the symbol
+        # alerts has 2 fields: chat_id and data
+        monitor = await db.alerts.find_one({"chat_id": chat_id})
 
-    async def delete_monitor(self, chat_id: int, id: int):
-        list_monitor = self.get_all_monitors(chat_id)
+        if not monitor:
+            monitor = {"chat_id": chat_id, "data": []}
 
-        if len(list_monitor) < id:
+        monitor["data"].append({"symbol": symbol, "price": price})
+        await db.alerts.update_one({"chat_id": chat_id}, {"$set": monitor}, upsert=True)
+        return len(monitor["data"])
+
+    @classmethod
+    async def update_monitor(cls, db, chat_id: int, alert_id: int, price: float):
+        # find if the user already has a monitor for the symbol
+        try:
+            monitor = await db.alerts.find_one({"chat_id": chat_id})
+
+            if not monitor:
+                monitor = {"chat_id": chat_id, "data": []}
+
+            monitor["data"][alert_id - 1]["price"] = price
+            await db.alerts.update_one(
+                {"chat_id": chat_id}, {"$set": monitor}, upsert=True
+            )
+            return monitor["data"][alert_id - 1]["symbol"]
+        except Exception as e:
+            print(f"Error updating monitor {str(e)}")
+            return None
+
+    @classmethod
+    async def delete_monitor(cls, db, chat_id: int, id: int):
+        list_monitors = await db.alerts.find_one({"chat_id": chat_id})
+        if not list_monitors:
             return False
 
-        monitor = list_monitor[id - 1]
-        await self.db.alerts.delete_one({"_id": monitor["_id"]})
+        if id < 1 or id > len(list_monitors["data"]):
+            return False
+
+        list_monitors["data"].pop(id - 1)
+
+        await db.alerts.update_one({"chat_id": chat_id}, {"$set": list_monitors})
 
         return True
 
     async def check_alerts(self):
         while self.is_running:
             all_users = await self.db.alerts.distinct("chat_id")
-
+            price_bot = CryptoPriceBot()
             for user in all_users:
                 user_config = await self.db.config.find_one({"chat_id": user})
 
@@ -52,7 +85,6 @@ class MonitorService:
                 if current_time - last_alert_time < alert_interval * 60:
                     continue
                 alerts = await self.get_all_monitors(user)
-                price_bot = CryptoPriceBot()
                 alerts_dict = defaultdict(list)
                 for alert in alerts:
                     alerts_dict[alert["symbol"]].append(float(alert.get("price")))
@@ -86,7 +118,7 @@ class MonitorService:
                                 )
                     except Exception as e:
                         print(f"Error checking alerts: {str(e)}")
-                await price_bot.close()
+            await price_bot.close()
             await asyncio.sleep(60)
 
     async def start_monitoring(self):

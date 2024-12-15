@@ -10,6 +10,7 @@ from telethon import Button, TelegramClient, events
 from telethon.types import DocumentAttributeFilename
 import pandas as pd
 
+from src.services.monitor_service import MonitorService
 from src.services.indicators import quant_agent
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
@@ -118,9 +119,13 @@ async def add_alert(event):
     if len(args) not in [1, 3]:
         await event.reply("Invalid alert format")
 
+    chat_id = event.chat_id
     if len(args) == 1:
-        cursor = db.alerts.find({"chat_id": event.chat_id})
-        alerts = await cursor.to_list(length=1000)
+        query = await db.alerts.find_one({"chat_id": chat_id})
+        alerts = []
+        if query:
+            alerts = query.get("data", [])
+
         if not alerts:
             await event.reply("🔕 No alerts set")
             return
@@ -141,26 +146,11 @@ async def add_alert(event):
         price = float(args[2])
         if args[1].isnumeric():
             # Update alert by index
-            alert_id = int(args[1].isnumeric())
-            cursor = db.alerts.find({"chat_id": event.chat_id})
-            alerts = await cursor.to_list(length=1000)
-
-            if not alerts:
-                await event.reply("🔕 No alerts set")
-                return
-
-            if alert_id < 1 or alert_id > len(alerts):
+            alert_id = int(args[1])
+            symbol = await MonitorService.update_monitor(db, chat_id, alert_id, price)
+            if not symbol:
                 await event.reply("⚠️ Invalid alert ID")
                 return
-            symbol = alerts[alert_id - 1].get("symbol")
-
-            db.alerts.update_one(
-                {
-                    "_id": alerts[alert_id - 1]["_id"],
-                },
-                {"$set": {"price": price}},
-            )
-
             # Send confirmation message
             await event.reply(
                 f"✅ Alert ID {alert_id} of symbol {symbol} updated to ${price:,.3f}"
@@ -169,12 +159,9 @@ async def add_alert(event):
             return
         symbol = symbol_complete(args[1].upper())
 
-        db.alerts.insert_one(
-            {"symbol": symbol, "price": price, "chat_id": event.chat_id}
-        )
-
+        added_id = await MonitorService.add_monitor(db, chat_id, symbol, price)
         # Send confirmation message
-        await event.reply(f"✅ Alert 1 set for {symbol} at ${price:,.3f}")
+        await event.reply(f"✅ Alert {added_id} set for {symbol} at ${price:,.3f}")
 
 
 @bot.on(events.NewMessage(pattern=r"^\/(d|delete)"))
@@ -189,9 +176,9 @@ async def delete_alert(event):
     except ValueError:
         await event.reply("⚠️ Invalid alert ID")
         return
-
-    cursor = db.alerts.find({"chat_id": event.chat_id})
-    alerts = await cursor.to_list(length=1000)
+    chat_id = event.chat_id
+    query = await db.alerts.find_one({"chat_id": chat_id})
+    alerts = query.get("data", [])
 
     if not alerts:
         await event.reply("🔕 No alerts set")
@@ -221,18 +208,9 @@ async def callback_handler(event):
     # Check if the callback data starts with 'delete_yes_'
     if event.data.startswith(b"delete_yes_"):
         delete_id = int(event.data.decode("utf-8").split("_")[-1])
-
-        cursor = db.alerts.find({"chat_id": event.chat_id})
-        alerts = await cursor.to_list(length=1000)
-
-        if len(alerts) < delete_id:
+        if not await MonitorService.delete_monitor(db, event.chat_id, delete_id):
             await event.answer("⚠️ Alert ID not found.")
             return
-
-        # Remove the alert from the list
-        remove_alert = alerts[delete_id - 1]
-
-        db.alerts.delete_one({"_id": remove_alert["_id"]})
 
         await event.answer("✅ Alert deleted successfully.")
 
