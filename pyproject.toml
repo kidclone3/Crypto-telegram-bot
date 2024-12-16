@@ -23,6 +23,7 @@ pandas = "^2.2.3"
 matplotlib = "^3.9.3"
 motor = "^3.6.0"
 ta = "^0.11.0"
+bs4 = "^0.0.2"
 
 
 [build-system]

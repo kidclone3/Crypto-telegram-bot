@@ -10,6 +10,7 @@ from telethon import Button, TelegramClient, events
 from telethon.types import DocumentAttributeFilename
 import pandas as pd
 
+from src.services.economic_calendar_table import final_table
 from src.services.monitor_service import MonitorService
 from src.services.indicators import quant_agent
 from src.services.price_bot import CryptoPriceBot
@@ -37,6 +38,8 @@ DEFAULT_CONFIG = {
     "price_threshold": 0.01,
     "alert_interval": 1,
 }
+
+PATTERN_TWO_ARGS = r"\s+([a-zA-Z]+)(?:\s+(\d+[mh]))?$"
 
 loop = asyncio.get_event_loop()
 
@@ -113,7 +116,7 @@ async def config_command(event):
         await event.reply(f"✅ Configuration updated: {config_key} = {config_value}")
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(a|alert)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:a|alert)"))
 async def add_alert(event):
     args = event.message.message.split(" ")
     if len(args) not in [1, 3]:
@@ -164,7 +167,7 @@ async def add_alert(event):
         await event.reply(f"✅ Alert {added_id} set for {symbol} at ${price:,.3f}")
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(d|delete)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:d|delete)"))
 async def delete_alert(event):
     args = event.message.text.split()
     if len(args) != 2:
@@ -220,7 +223,7 @@ async def callback_handler(event):
     await event.delete()
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(?!ping$)(p|price)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:p|price)"))
 async def price_command(event):
     try:
         # Check if symbol is provided
@@ -253,7 +256,7 @@ async def price_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(f|filter)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:f|filter)"))
 async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
     msg = await event.reply("📊 Fetching price data...")
     try:
@@ -296,7 +299,7 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(?!config\b)(c|chart)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:c|chart)" + PATTERN_TWO_ARGS))
 async def chart_command(event):
     try:
         args = event.message.text.split()
@@ -478,71 +481,17 @@ async def signal_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-# # @bot.on(events.NewMessage)
-# async def monitor_price(event):
-#     """Monitor price alerts and send notifications
-
-#     Args:
-#         chat (str): Chat ID to send alerts to
-#         price_threshold (float, optional): _description_. Defaults to 0.001. as 0.1% difference
-#     """
-#     config = await db.config.find_one({"chat_id": event.chat_id})
-#     if config:
-#         price_threshold = config.get("price_threshold")
-#         alert_interval = config.get("alert_interval")
-#         is_active = config.get("is_alert_on")
-
-#     if not is_active:
-#         return
-#     chat_id = event.chat_id
-#     print("Alerts monitoring started")
-#     while True:
-#         # async with aiofiles.open("alert_list.txt", "r") as f:
-#         #     alerts = await f.readlines()
-#         cursor = db.alerts.find({"chat_id": chat_id})
-#         alerts = await cursor.to_list(length=1000)
-#         if not alerts:
-#             await asyncio.sleep(60 * alert_interval)  # sleep for alert_interval minutes
-#             continue
-
-#         # mapping to dict
-#         alerts_dict = defaultdict(list)
-#         for alert in alerts:
-#             alerts_dict[alert["symbol"]].append(float(alert.get("price")))
-
-#         price_bot = CryptoPriceBot()
-
-#         for symbol, prices in alerts_dict.items():
-#             try:
-#                 # symbol, target_price = alert.get("symbol"), alert.get("price")
-#                 # target_price = float(target_price)
-
-#                 # Get current price
-#                 ticker_data = await price_bot.fetch_latest_price(symbol)
-#                 if not ticker_data:
-#                     continue
-#                 current_price = ticker_data["current_price"]
-#                 for target_price in prices:
-#                     # Calculate price difference percentage
-#                     price_diff_pct = (
-#                         abs(current_price - target_price) / target_price * 100
-#                     )
-#                     # If price is within threshold, send alert
-#                     if price_diff_pct <= price_threshold:
-#                         alert_message = (
-#                             f"🚨 Price Alert!\n"
-#                             f"Exchange: {ticker_data['exchange']}\n"
-#                             f"Symbol: {symbol}\n"
-#                             f"Target: ${target_price:,.4f}\n"
-#                             f"Current: ${current_price:,.4f}\n"
-#                             f"Difference: {price_diff_pct:.4f}%\n"
-#                             f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
-#                         )
-#                         # Send alert to all active chats
-#                         await bot.send_message(chat_id, message=alert_message)
-
-#             except Exception as e:
-#                 print(f"Error processing alert {alert}: {str(e)}")
-#                 continue
-#         await price_bot.close()
-#         await asyncio.sleep(60 * alert_interval)
+@bot.on(events.NewMessage(pattern=r"^\/calendar"))
+async def get_all_economic_calendar(event):
+    loc = final_table()
+    if not isinstance(loc, str):
+        try:
+            for i, row in loc.iterrows():
+                message = (
+                    f"{row['Time']} {row['Flag']} {row['Imp']} | "
+                    f"{row['Event']}\n"
+                    f"Actual: {row['Actual']} | Forecast: {row['Forecast']} | Previous: {row['Previous']}"
+                )
+                await bot.send_message(event.chat_id, message)
+        except Exception as e:
+            await event.reply(f"❌ Error: {str(e)}")
