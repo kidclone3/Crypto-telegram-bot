@@ -2,13 +2,7 @@
     "python.analysis.autoSearchPaths": true,
     "python.analysis.autoImportCompletions": true,
     "python.envFile": "${workspaceFolder}/.env",
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}"
-    ],
     "python.analysis.useLibraryCodeForTypes": true,
-    "terminal.integrated.env.linux": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
     "docker.dockerPath": "/usr/bin/docker",
     "ruff.configuration": "pyproject.toml",
     "editor.formatOnSave": true,
@@ -16,5 +10,4 @@
         "editor.defaultFormatter": "charliermarsh.ruff",
     },
     "python.analysis.importFormat": "absolute",
-    "python.analysis.showOnlyDirectDependenciesInAutoImport": true
 }
