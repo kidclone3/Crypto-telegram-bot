@@ -38,6 +38,39 @@ def calculate_mfi(prices_df):
     return mfi.money_flow_index()
 
 
+def format_indicator_message(price, reasoning, overall_signal, confidence):
+    # Signal emoji mapping
+    signal_emojis = {"bullish": "🟢", "bearish": "🔴", "neutral": "⚪"}
+
+    # Format header
+    message = [
+        f"💰 Price: ${price:.4f} USDT",
+        f"📊 Signal: {signal_emojis[overall_signal]} {overall_signal.upper()}",
+        f"🎯 Confidence: {confidence:.1%}\n",
+    ]
+
+    # Format indicators
+    for indicator, data in reasoning.items():
+        signal = data["signal"]
+        details = data["details"]
+        emoji = signal_emojis[signal]
+
+        if indicator == "MACD":
+            message.append(f"{emoji} MACD: {details}")
+        elif indicator == "RSI":
+            message.append(f"{emoji} RSI(14): {details}")
+        elif indicator == "Bollinger":
+            message.append(f"{emoji} BBands: {details}")
+        elif indicator == "OBV":
+            message.append(f"{emoji} OBV: {details}")
+        elif indicator == "STOCH":
+            message.append(f"{emoji} STOCH: {details}")
+        elif indicator == "MFI":
+            message.append(f"{emoji} MFI(14): {details}")
+
+    return "\n".join(message)
+
+
 ##### Quantitative Agent #####
 async def quant_agent(prices_df):
     """Analyzes technical indicators and generates trading signals."""
@@ -166,12 +199,7 @@ async def quant_agent(prices_df):
     for key, value in reasoning.items():
         message_body.append((key, value["signal"], value["details"]))
 
-    table = tabulate(
-        message_body, headers=["Indicator", "Signal", "Details"], tablefmt="pretty"
-    )
-    message_content_string = (
-        f"Overall Signal: {overall_signal.upper()}\n"
-        f"Confidence: {confidence:.2%}\n\n"
-        f"<pre>{table}</pre>"
+    message_content_string = format_indicator_message(
+        prices_df["close"].iloc[-1], reasoning, overall_signal, confidence
     )
     return message_content_string
