@@ -13,6 +13,7 @@ import pandas as pd
 from src.services.economic_calendar_table import final_table
 from src.services.monitor_service import MonitorService
 from src.services.indicators import quant_agent
+from src.services.monitor_signal import SignalService
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
 from src.utils import format_price_message, symbol_complete
@@ -62,6 +63,11 @@ async def send_welcome(event):
     if not config:
         await db.config.insert_one({"chat_id": chat_id, **DEFAULT_CONFIG})
 
+    await event.reply(START_MSG)
+
+
+@bot.on(events.NewMessage(pattern=r"^\/help$"))
+async def send_help(event):
     await event.reply(START_MSG)
 
 
@@ -319,9 +325,9 @@ async def chart_command(event):
 
         # Get candle data and create chart
         price_bot = CryptoPriceBot()
-        df, exchange = await price_bot.fetch_ohlcv_data(symbol, timeframe)
+        df, exchange = await price_bot.fetch_ohlcv_data(symbol, timeframe, 200)
         df_future, ft_exchange = await price_bot.fetch_future_ohlcv_data(
-            symbol, timeframe
+            symbol, timeframe, 200
         )
         await price_bot.close()
 
@@ -495,3 +501,25 @@ async def get_all_economic_calendar(event):
                 await bot.send_message(event.chat_id, message)
         except Exception as e:
             await event.reply(f"❌ Error: {str(e)}")
+
+
+@bot.on(events.NewMessage(pattern=r"^\/(?:mon|monitor)"))
+async def add_monitor_symbol(event):
+    args = event.message.text.split()
+    if len(args) == 1:
+        # show list signals
+        query = await db.signals.find_one({"chat_id": event.chat_id})
+        if not query:
+            await event.reply("🔕 No signals set")
+            return
+
+        signals = query.get("data", [])
+        await event.reply(f"🔔 Signals: {signals}")
+        return
+
+    chat_id = event.chat_id
+    symbols = [symbol_complete(args[i].upper()) for i in range(1, len(args))]
+
+    added_id = await SignalService.add_monitor(db, chat_id, symbols, 0)
+    # Send confirmation message
+    await event.reply(f"✅ Monitor {added_id} set for {symbols}")

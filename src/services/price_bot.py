@@ -9,6 +9,10 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
 
+from src.services.MultiKernelRegression import (
+    apply_multi_kernel_regression,
+    viewable_signal,
+)
 from src.services.custom_indicators.pinbar_detector import PinbarDetector
 
 
@@ -70,7 +74,7 @@ class CryptoPriceBot:
 
         except Exception as e:
             print(f"Error fetching OHLCV data for {symbol}: {str(e)}")
-            return None
+            return None, exchange
 
     async def fetch_future_ohlcv_data(
         self, symbol: str, timeframe: str = "1h", limit: int = 100
@@ -148,45 +152,25 @@ class CryptoPriceBot:
             if df is None or df.empty:
                 raise ValueError("Empty or invalid DataFrame provided")
 
-            signals, colors = self.pinbar_detector.detect(df)
+            # use multi kernel regression to detect signals
+            df_signal = viewable_signal(apply_multi_kernel_regression(df, repaint=True))
 
-            bullish_signals, bearish_signals = [], []
-            for i in range(len(signals)):
-                if signals[i]:
-                    if colors[i] == 0:
-                        bullish_signals.append(signals[i])
-                        bearish_signals.append(np.nan)
-                    else:
-                        bearish_signals.append(signals[i])
-                        bullish_signals.append(np.nan)
-                else:
-                    bullish_signals.append(np.nan)
-                    bearish_signals.append(np.nan)
-
-            ic = []
-            if not np.all(np.isnan(bullish_signals)):
-                ic.append(
-                    mpf.make_addplot(
-                        bullish_signals,
-                        type="scatter",
-                        markersize=100,
-                        marker="^",
-                        color="g",
-                        panel=0,
-                    )
-                )
-
-            if not np.all(np.isnan(bearish_signals)):
-                ic.append(
-                    mpf.make_addplot(
-                        bearish_signals,
-                        type="scatter",
-                        markersize=100,
-                        marker="v",
-                        color="r",
-                        panel=0,
-                    )
-                )
+            ic = [
+                mpf.make_addplot(
+                    df_signal["signal_val_up"],
+                    type="scatter",
+                    color="g",
+                    marker="^",
+                    markersize=200,
+                ),
+                mpf.make_addplot(
+                    df_signal["signal_val_down"],
+                    type="scatter",
+                    color="r",
+                    marker="v",
+                    markersize=200,
+                ),
+            ]
 
             # Create buffer for the image
             buf = io.BytesIO()
