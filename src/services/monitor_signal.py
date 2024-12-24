@@ -55,32 +55,47 @@ class SignalService:
             price_bot = CryptoPriceBot()
             for user in all_users:
                 alerts = await self.get_all_monitors(user)
-
+                message_list = []
                 for symbol in alerts:
-                    try:
-                        # Get current price
-                        ticker_data, exchange = await price_bot.fetch_ohlcv_data(
-                            symbol, timeframe="2h", limit=200
-                        )
-
-                        if ticker_data is None or ticker_data.empty:
-                            continue
-
-                        current_price = ticker_data.iloc[-1]["close"]
-                        df = apply_multi_kernel_regression(ticker_data, repaint=True)
-                        if df.iloc[-4:]["signal_up"].any():
-                            await self.client.send_message(
-                                user,
-                                f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} is up   ",
-                            )
-                        elif df.iloc[-4:]["signal_down"].any():
-                            await self.client.send_message(
-                                user,
-                                f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} is down   ",
+                    for timeframe in ["2h", "4h", "1d"]:
+                        try:
+                            # Get current price
+                            ticker_data, exchange = await price_bot.fetch_ohlcv_data(
+                                symbol, timeframe=timeframe, limit=200
                             )
 
-                    except Exception as e:
-                        print(f"Error checking alerts: {str(e)}")
+                            if ticker_data is None or ticker_data.empty:
+                                continue
+
+                            current_price = ticker_data.iloc[-1]["close"]
+                            df = apply_multi_kernel_regression(
+                                ticker_data, repaint=True
+                            )
+                            if df.iloc[-2:]["signal_up"].any():
+                                # await self.client.send_message(
+                                #     user,
+                                #     f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up   ",
+                                # )
+                                message_list.append(
+                                    f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up"
+                                )
+                            elif df.iloc[-2:]["signal_down"].any():
+                                # await self.client.send_message(
+                                #     user,
+                                #     f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down   ",
+                                # )
+                                message_list.append(
+                                    f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down"
+                                )
+
+                        except Exception as e:
+                            print(f"Error checking alerts: {str(e)}")
+                            await self.client.send_message(
+                                user,
+                                f"Error checking alerts for {symbol} in timeframe {timeframe}",
+                            )
+                await self.client.send_message(user, "\n".join(message_list))
+
             await price_bot.close()
             await asyncio.sleep(60 * 30)  # 30 minutes
 
