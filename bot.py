@@ -11,4 +11,5 @@ if __name__ == "__main__":
         bot.run_until_disconnected()
     finally:
         loop.run_until_complete(monitor.stop_monitoring())
+        loop.run_until_complete(signal.stop_monitoring())
         loop.close()

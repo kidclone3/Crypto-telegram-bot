@@ -75,7 +75,7 @@ class MonitorService:
                 user_config = await self.db.config.find_one({"chat_id": user})
 
                 price_threshold = user_config["price_threshold"]
-                is_alert_on = user_config["is_alert_on"]
+                is_alert_on = user_config["is_alert"] == "on"
                 alert_interval = user_config["alert_interval"]
                 # Skip if alerts are turned off for this user
                 if not is_alert_on:

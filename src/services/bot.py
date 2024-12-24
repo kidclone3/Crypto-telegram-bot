@@ -35,9 +35,10 @@ START_MSG = (
 )
 
 DEFAULT_CONFIG = {
-    "is_alert_on": False,
+    "is_alert": "off",
     "price_threshold": 0.01,
     "alert_interval": 1,
+    "is_future": "off",
 }
 
 PATTERN_TWO_ARGS = r"\s+([a-zA-Z]+)(?:\s+(\d+[mh]))?$"
@@ -49,6 +50,15 @@ bot: TelegramClient = TelegramClient(
 ).start(bot_token=settings.bot_token)
 
 db = motor_client["crypto"]
+
+
+# TODO: Should we use pydantic for this?
+async def get_config(chat_id: int) -> dict:
+    config = await db.config.find_one({"chat_id": chat_id})
+    if not config:
+        await db.config.insert_one({"chat_id": chat_id, **DEFAULT_CONFIG})
+        return await db.config.find_one({"chat_id": chat_id})
+    return config
 
 
 @bot.on(events.NewMessage(pattern=r"^\/start$"))
@@ -83,7 +93,7 @@ async def config_command(event):
     chat_id = event.chat_id
 
     # get the config for the chat
-    config = await db.config.find_one({"chat_id": chat_id})
+    config = await get_config(chat_id)
 
     if len(args) == 1:
         if not config:
@@ -108,8 +118,19 @@ async def config_command(event):
             await event.reply("⚠️ Invalid configuration key.")
             return
 
-        if config_key == "is_alert_on":
-            config_value = config_value.lower() == "true"
+        def validate_on_off(value: str):
+            return value.lower() not in ["on", "off"]
+
+        if config_key == "is_alert":
+            if validate_on_off(config_value.lower()):
+                await event.reply("⚠️ Invalid value for is_alert. Use 'on' or 'off'.")
+                return
+            config_value = config_value.lower()
+        elif config_key == "is_future":
+            if validate_on_off(config_value.lower()):
+                await event.reply("⚠️ Invalid value for is_future. Use 'on' or 'off'.")
+                return
+            config_value = config_value.lower()
         elif config_key == "price_threshold":
             config_value = float(config_value)
         elif config_key == "alert_interval":
@@ -308,6 +329,8 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
 @bot.on(events.NewMessage(pattern=r"^\/(?:c|chart)" + PATTERN_TWO_ARGS))
 async def chart_command(event):
     try:
+        config = await get_config(event.chat_id)
+        is_future_on = config.get("is_future", "off") == "on"
         args = event.message.text.split()
         if len(args) < 2:
             await event.reply(
@@ -325,10 +348,14 @@ async def chart_command(event):
 
         # Get candle data and create chart
         price_bot = CryptoPriceBot()
+
         df, exchange = await price_bot.fetch_ohlcv_data(symbol, timeframe, 200)
-        df_future, ft_exchange = await price_bot.fetch_future_ohlcv_data(
-            symbol, timeframe, 200
-        )
+        if df is None:  # If no data is returned, try fetching future data
+            is_future_on = True
+        if is_future_on:
+            df_future, ft_exchange = await price_bot.fetch_future_ohlcv_data(
+                symbol, timeframe, 200
+            )
         await price_bot.close()
 
         if df is None or df.empty:
@@ -337,17 +364,16 @@ async def chart_command(event):
 
         # Calculate some basic statistics
         change_pct = (
-            (df_future["close"].iloc[-1] - df_future["close"].iloc[0])
-            / df_future["close"].iloc[0]
+            (df["close"].iloc[-1] - df["close"].iloc[0]) / df["close"].iloc[0]
         ) * 100
-        high = df_future["high"].max()
-        low = df_future["low"].min()
+        high = df["high"].max()
+        low = df["low"].min()
 
         # Assuming df is your DataFrame and it has a DateTime index
         now = datetime.now()
 
         # Exclude the current hour
-        df_excluding_current_hour = df_future[
+        df_excluding_current_hour = df[
             df.index < now.replace(minute=0, second=0, microsecond=0)
         ]
 
@@ -389,7 +415,7 @@ async def chart_command(event):
         )
 
         # Chart future data
-        if df_future is not None:
+        if is_future_on and df_future is not None:
             chart_buf = await price_bot.generate_chart(
                 df_future, symbol, timeframe, exchange
             )
