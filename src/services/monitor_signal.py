@@ -71,7 +71,11 @@ class SignalService:
                             df = apply_multi_kernel_regression(
                                 ticker_data, repaint=True
                             )
-                            if df.iloc[-2:]["signal_up"].any():
+                            # Just get the closed candle
+                            signal_up, signal_down = df.iloc[-2][
+                                ["signal_up", "signal_down"]
+                            ]
+                            if signal_up:
                                 # await self.client.send_message(
                                 #     user,
                                 #     f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up   ",
@@ -79,7 +83,7 @@ class SignalService:
                                 message_list.append(
                                     f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up"
                                 )
-                            elif df.iloc[-2:]["signal_down"].any():
+                            elif signal_down:
                                 # await self.client.send_message(
                                 #     user,
                                 #     f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down   ",
