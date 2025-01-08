@@ -1,4 +1,7 @@
 import asyncio
+import schedule
+import time
+from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from telethon import TelegramClient
 
@@ -49,63 +52,77 @@ class SignalService:
 
         return True
 
-    async def check_alerts(self):
-        while self.is_running:
-            all_users = await self.db.signals.distinct("chat_id")
-            price_bot = CryptoPriceBot()
+    async def check_alerts(self, timeframe: str):
+        all_users = await self.db.signals.distinct("chat_id")
+        price_bot = CryptoPriceBot()
+
+        try:
             for user in all_users:
                 alerts = await self.get_all_monitors(user)
                 message_list = []
+
                 for symbol in alerts:
-                    for timeframe in ["2h", "4h", "1d"]:
-                        try:
-                            # Get current price
-                            ticker_data, exchange = await price_bot.fetch_ohlcv_data(
-                                symbol, timeframe=timeframe, limit=200
+                    try:
+                        ticker_data, exchange = await price_bot.fetch_ohlcv_data(
+                            symbol, timeframe=timeframe, limit=200
+                        )
+
+                        if ticker_data is None or ticker_data.empty:
+                            continue
+
+                        current_price = ticker_data.iloc[-1]["close"]
+                        df = apply_multi_kernel_regression(ticker_data, repaint=True)
+                        signal_up, signal_down = df.iloc[-2][
+                            ["signal_up", "signal_down"]
+                        ]
+
+                        if signal_up:
+                            message_list.append(
+                                f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up"
+                            )
+                        elif signal_down:
+                            message_list.append(
+                                f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down"
                             )
 
-                            if ticker_data is None or ticker_data.empty:
-                                continue
+                    except Exception as e:
+                        print(f"Error checking alerts for {symbol}: {str(e)}")
+                        await self.client.send_message(
+                            user,
+                            f"Error checking alerts for {symbol} in timeframe {timeframe}",
+                        )
 
-                            current_price = ticker_data.iloc[-1]["close"]
-                            df = apply_multi_kernel_regression(
-                                ticker_data, repaint=True
-                            )
-                            # Just get the closed candle
-                            signal_up, signal_down = df.iloc[-2][
-                                ["signal_up", "signal_down"]
-                            ]
-                            if signal_up:
-                                # await self.client.send_message(
-                                #     user,
-                                #     f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up   ",
-                                # )
-                                message_list.append(
-                                    f"📈 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is up"
-                                )
-                            elif signal_down:
-                                # await self.client.send_message(
-                                #     user,
-                                #     f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down   ",
-                                # )
-                                message_list.append(
-                                    f"📉 {exchange.capitalize()}: Signal for {symbol}: {current_price} in timeframe {timeframe} is down"
-                                )
+                if message_list:
+                    await self.client.send_message(user, "\n".join(message_list))
 
-                        except Exception as e:
-                            print(f"Error checking alerts: {str(e)}")
-                            await self.client.send_message(
-                                user,
-                                f"Error checking alerts for {symbol} in timeframe {timeframe}",
-                            )
-                await self.client.send_message(user, "\n".join(message_list))
-
+        finally:
             await price_bot.close()
-            await asyncio.sleep(60 * 30)  # 30 minutes
+
+    def schedule_jobs(self):
+        # Schedule 2h checks (every even hour UTC)
+        for hour in range(0, 24, 2):
+            schedule.every().day.at(f"{hour:02d}:00").do(
+                lambda: asyncio.run(self.check_alerts("2h"))
+            )
+
+        # Schedule 4h checks (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
+        for hour in range(0, 24, 4):
+            schedule.every().day.at(f"{hour:02d}:00").do(
+                lambda: asyncio.run(self.check_alerts("4h"))
+            )
+
+        # Schedule daily check at 00:00 UTC
+        schedule.every().day.at("00:00").do(
+            lambda: asyncio.run(self.check_alerts("1d"))
+        )
 
     async def start_monitoring(self):
         self.is_running = True
-        await self.check_alerts()
+        self.schedule_jobs()
+
+        while self.is_running:
+            schedule.run_pending()
+            await asyncio.sleep(60)  # Check schedule every minute
 
     async def stop_monitoring(self):
         self.is_running = False
