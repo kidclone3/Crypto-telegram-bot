@@ -22,28 +22,33 @@ class MonitorService:
         return []
 
     @classmethod
-    async def add_monitor(cls, db, chat_id: int, symbol: str, price: float):
+    async def add_monitor(cls, db, chat_id: int, data: dict):
         # find if the user already has a monitor for the symbol
         # alerts has 2 fields: chat_id and data
         monitor = await db.alerts.find_one({"chat_id": chat_id})
 
         if not monitor:
             monitor = {"chat_id": chat_id, "data": []}
-
-        monitor["data"].append({"symbol": symbol, "price": price})
+        symbol = data.get("symbol")
+        price = data.get("price")
+        msg = data.get("msg", None)
+        monitor["data"].append({"symbol": symbol, "price": price, "msg": msg})
         await db.alerts.update_one({"chat_id": chat_id}, {"$set": monitor}, upsert=True)
         return len(monitor["data"])
 
     @classmethod
-    async def update_monitor(cls, db, chat_id: int, alert_id: int, price: float):
+    async def update_monitor(cls, db, chat_id: int, data: dict):
         # find if the user already has a monitor for the symbol
         try:
             monitor = await db.alerts.find_one({"chat_id": chat_id})
 
             if not monitor:
                 monitor = {"chat_id": chat_id, "data": []}
-
+            alert_id = data["id"]
+            price = data["price"]
+            msg = data["msg"]
             monitor["data"][alert_id - 1]["price"] = price
+            monitor["data"][alert_id - 1]["msg"] = msg
             await db.alerts.update_one(
                 {"chat_id": chat_id}, {"$set": monitor}, upsert=True
             )
@@ -87,16 +92,20 @@ class MonitorService:
                 alerts = await self.get_all_monitors(user)
                 alerts_dict = defaultdict(list)
                 for alert in alerts:
-                    alerts_dict[alert["symbol"]].append(float(alert.get("price")))
+                    alerts_dict[alert["symbol"]].append(
+                        (float(alert.get("price")), alert.get("msg"))
+                    )
 
-                for symbol, prices in alerts_dict.items():
+                for symbol, values in alerts_dict.items():
                     try:
                         # Get current price
-                        ticker_data = await price_bot.fetch_latest_price(symbol)
+                        ticker_data = await price_bot.fetch_timeframe_change(
+                            symbol, "1m"
+                        )
                         if not ticker_data:
                             continue
                         current_price = ticker_data["current_price"]
-                        for target_price in prices:
+                        for target_price, msg in values:
                             # Calculate price difference percentage
                             price_diff_pct = (
                                 abs(current_price - target_price) / target_price * 100
@@ -111,6 +120,8 @@ class MonitorService:
                                     f"Current: ${current_price:,.4f}\n"
                                     f"Difference: {price_diff_pct:.4f}%\n"
                                     f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                                    "\n"
+                                    f"Message: {msg}"
                                 )
                                 # Send alert to all active chats
                                 await self.client.send_message(

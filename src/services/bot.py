@@ -146,9 +146,6 @@ async def config_command(event):
 @bot.on(events.NewMessage(pattern=r"^\/(?:a|alert)"))
 async def add_alert(event):
     args = event.message.message.split(" ")
-    if len(args) not in [1, 3]:
-        await event.reply("Invalid alert format")
-
     chat_id = event.chat_id
     if len(args) == 1:
         query = await db.alerts.find_one({"chat_id": chat_id})
@@ -160,12 +157,16 @@ async def add_alert(event):
             await event.reply("🔕 No alerts set")
             return
 
-        table_header = ["ID", "Symbol", "Price ($)"]
+        table_header = ["ID", "Symbol", "Price ($)", "Message"]
         table_body = []
         # Add numbers to the alerts
         for i, alert in enumerate(alerts):
-            symbol, price = alert.get("symbol"), alert.get("price")
-            table_body.append([i + 1, symbol, f"${price}"])
+            symbol, price, msg = (
+                alert.get("symbol"),
+                alert.get("price"),
+                alert.get("msg", ""),
+            )
+            table_body.append([i + 1, symbol, f"${price}", msg])
 
         # Convert table to string
         alert_table = tabulate(table_body, headers=table_header, tablefmt="pretty")
@@ -174,24 +175,32 @@ async def add_alert(event):
         return
     else:
         price = float(args[2])
+        msg = " ".join(args[3:]) if len(args) > 3 else None
         if args[1].isnumeric():
             # Update alert by index
             alert_id = int(args[1])
-            symbol = await MonitorService.update_monitor(db, chat_id, alert_id, price)
+            data = {"id": alert_id, "price": price, "msg": msg}
+            symbol = await MonitorService.update_monitor(db, chat_id, data)
             if not symbol:
                 await event.reply("⚠️ Invalid alert ID")
                 return
             # Send confirmation message
             await event.reply(
-                f"✅ Alert ID {alert_id} of symbol {symbol} updated to ${price:,.3f}"
+                f"✅ Alert ID {alert_id} of symbol {symbol} updated to ${price:,.3f}\n Message: {msg}"
             )
 
             return
         symbol = symbol_complete(args[1].upper())
-
-        added_id = await MonitorService.add_monitor(db, chat_id, symbol, price)
+        data = {
+            "symbol": symbol,
+            "price": price,
+            "msg": msg,
+        }
+        added_id = await MonitorService.add_monitor(db, chat_id, data)
         # Send confirmation message
-        await event.reply(f"✅ Alert {added_id} set for {symbol} at ${price:,.3f}")
+        await event.reply(
+            f"✅ Alert {added_id} set for {symbol} at ${price:,.3f}\n Message: {msg}"
+        )
 
 
 @bot.on(events.NewMessage(pattern=r"^\/(?:d|delete)"))
@@ -477,7 +486,7 @@ async def chart_command(event):
 @bot.on(events.NewMessage(pattern=r"^\/(?!start\b)(s|signal)"))
 async def signal_command(event):
     try:
-        args = event.message.text.split()
+        args = event.message.text.split(" ")
         if len(args) < 2 or len(args) > 3:
             await event.reply("⚠️ Please provide a symbol. Example: /signal btc\n")
             return
@@ -540,7 +549,9 @@ async def add_monitor_symbol(event):
             return
 
         signals = query.get("data", [])
-        await event.reply(f"🔔 Signals: {signals}")
+        # list signals
+        list_signals = "\n".join([f"{i+1}. {signals[i]}" for i in range(len(signals))])
+        await event.reply(f"🔔 Signals: \n{list_signals}")
         return
 
     chat_id = event.chat_id
