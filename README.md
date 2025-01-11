@@ -2,8 +2,9 @@
 Web telegram client with API interface. Python + FastAPI + Telethon.
 
 # Installation
+Use poetry to install dependencies.
 ```bash
-pip install -r requirements.txt
+poetry install
 ```
 
 # Usage
@@ -27,6 +28,9 @@ watchmedo auto-restart --directory=./src --pattern='*.py' --recursive -- python 
 # Features:
 
 - [x] Real time price alerts
-- [ ] Use tradingview charting library
 - [x] Store user data in MongoDB
+
+## Microservices:
 - [ ] Store fetched data in InfluxDB
+- [ ] Use ai agent, sent sentiment analysis to users with message queue
+
