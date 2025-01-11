@@ -203,7 +203,7 @@ async def add_alert(event):
         )
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(?:d|delete)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?:dela|delete_alert)"))
 async def delete_alert(event):
     args = event.message.text.split()
     if len(args) != 2:
@@ -230,8 +230,8 @@ async def delete_alert(event):
     # Show confirmation message with buttons
     keyboard = [
         [
-            Button.inline("Yes", f"delete_yes_{alert_id}"),
-            Button.inline("No", "delete_no"),
+            Button.inline("Yes", f"delete_alert_yes_{alert_id}"),
+            Button.inline("No", "delete_alert_no"),
         ]
     ]
     symbol = alerts[alert_id - 1].get("symbol")
@@ -244,8 +244,8 @@ async def delete_alert(event):
 
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
-    # Check if the callback data starts with 'delete_yes_'
-    if event.data.startswith(b"delete_yes_"):
+    # Check if the callback data starts with 'delete_alert_yes_'
+    if event.data.startswith(b"delete_alert_yes_"):
         delete_id = int(event.data.decode("utf-8").split("_")[-1])
         if not await MonitorService.delete_monitor(db, event.chat_id, delete_id):
             await event.answer("⚠️ Alert ID not found.")
@@ -253,7 +253,18 @@ async def callback_handler(event):
 
         await event.answer("✅ Alert deleted successfully.")
 
-    elif event.data == b"delete_no":
+    elif event.data == b"delete_alert_no":
+        await event.answer("❌ Deletion canceled.")
+
+    elif event.data.startswith(b"delmon_yes_"):
+        delete_id = int(event.data.decode("utf-8").split("_")[-1])
+        if not await SignalService.delete_monitor(db, event.chat_id, delete_id):
+            await event.answer("⚠️ Monitor ID not found.")
+            return
+
+        await event.answer("✅ Monitor deleted successfully.")
+
+    elif event.data == b"delmon_no":
         await event.answer("❌ Deletion canceled.")
 
     await event.delete()
@@ -550,7 +561,9 @@ async def add_monitor_symbol(event):
 
         signals = query.get("data", [])
         # list signals
-        list_signals = "\n".join([f"{i+1}. {signals[i]}" for i in range(len(signals))])
+        list_signals = "\n".join(
+            [f"{i + 1}. {signals[i]}" for i in range(len(signals))]
+        )
         await event.reply(f"🔔 Signals: \n{list_signals}")
         return
 
@@ -560,3 +573,40 @@ async def add_monitor_symbol(event):
     added_id = await SignalService.add_monitor(db, chat_id, symbols, 0)
     # Send confirmation message
     await event.reply(f"✅ Monitor {added_id} set for {symbols}")
+
+
+@bot.on(events.NewMessage(pattern=r"^\/(?:delmon|delete_monitor)"))
+async def delete_monitor_symbol(event):
+    args = event.message.text.split()
+    if len(args) != 2:
+        await event.reply("⚠️ Please provide a monitor ID to delete")
+        return
+
+    try:
+        monitor_id = int(args[1])
+    except ValueError:
+        await event.reply("⚠️ Invalid monitor ID")
+        return
+    chat_id = event.chat_id
+    query = await db.signals.find_one({"chat_id": chat_id})
+    signals = query.get("data", [])
+
+    if not signals:
+        await event.reply("🔕 No signals set")
+        return
+
+    if monitor_id < 1 or monitor_id > len(signals):
+        await event.reply("⚠️ Invalid monitor ID")
+        return
+
+    # Show confirmation message with buttons
+    keyboard = [
+        [
+            Button.inline("Yes", f"delmon_yes_{monitor_id}"),
+            Button.inline("No", "delmon_no"),
+        ]
+    ]
+    await event.reply(
+        f"❓ Are you sure you want to delete monitor ID {monitor_id}?",
+        buttons=keyboard,
+    )
