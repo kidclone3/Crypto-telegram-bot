@@ -16,6 +16,7 @@ from src.services.indicators import quant_agent
 from src.services.monitor_signal import SignalService
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
+from src.services.sentiment_service import get_latest_sentiment
 from src.utils import format_price_message, symbol_complete
 from src.core.db import motor_client
 
@@ -494,7 +495,7 @@ async def chart_command(event):
         await event.reply(f"❌ Error: {str(e)}")
 
 
-@bot.on(events.NewMessage(pattern=r"^\/(?!start\b)(s|signal)"))
+@bot.on(events.NewMessage(pattern=r"^\/(?!start\b|sentiment\b)(s|signal)"))
 async def signal_command(event):
     try:
         args = event.message.text.split(" ")
@@ -610,3 +611,9 @@ async def delete_monitor_symbol(event):
         f"❓ Are you sure you want to delete monitor ID {monitor_id}?",
         buttons=keyboard,
     )
+
+
+@bot.on(events.NewMessage(pattern=r"^\/sentiment$"))
+async def get_sentiment(event):
+    sentiment_str = get_latest_sentiment()
+    await event.reply(f"📊 Latest sentiment data:\n{sentiment_str}")
