@@ -98,22 +98,25 @@ class SignalService:
         finally:
             await price_bot.close()
 
+    async def test_print(self):
+        print("TESTING")
+
     def schedule_jobs(self):
         # Schedule 2h checks (every even hour UTC)
         for hour in range(0, 24, 2):
             schedule.every().day.at(f"{hour:02d}:00").do(
-                lambda: asyncio.run(self.check_alerts("2h"))
+                lambda: asyncio.create_task(self.check_alerts("2h"))
             )
 
         # Schedule 4h checks (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
         for hour in range(0, 24, 4):
             schedule.every().day.at(f"{hour:02d}:00").do(
-                lambda: asyncio.run(self.check_alerts("4h"))
+                lambda: asyncio.create_task(self.check_alerts("4h"))
             )
 
         # Schedule daily check at 00:00 UTC
         schedule.every().day.at("00:00").do(
-            lambda: asyncio.run(self.check_alerts("1d"))
+            lambda: asyncio.create_task(self.check_alerts("1d"))
         )
 
     async def start_monitoring(self):
