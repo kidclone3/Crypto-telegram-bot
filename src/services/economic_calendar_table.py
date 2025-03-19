@@ -1,7 +1,9 @@
+import json
 import requests
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
+from urllib.request import urlopen, Request
 
 
 def connection(url):
@@ -142,6 +144,90 @@ def final_table(url="https://www.investing.com/economic-calendar"):
         return e
 
 
+def get_event():
+    r = Request(
+        "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData",
+        headers={"User-Agent": "Mozilla/5.0", "accept-language": "en-US,en;q=0.9"},
+        data={},
+    )
+    response = urlopen(r).read()
+    soup = BeautifulSoup(response, "html.parser")
+    table = soup.find_all(class_="js-event-item")
+
+    result = []
+    base = {}
+
+    for bl in table:
+        time = bl.find(class_="first left time js-time").text
+        # evento = bl.find(class_ ="left event").text
+        currency = bl.find(class_="left flagCur noWrap").text.split(" ")
+        event = bl.find(class_="left event").a.text.split("\n")[1]
+        intensity = bl.find_all(class_="left textNum sentiment noWrap")
+        id_hour = currency[1] + "_" + time
+
+        if id_hour not in base:
+            base.update(
+                {
+                    id_hour: {
+                        "currency": currency[1],
+                        "event": event,
+                        "time": time,
+                        "intensity": {"1": 0, "2": 0, "3": 0, "priority": 0},
+                    }
+                }
+            )
+
+        intencity = base[id_hour]["intensity"]
+
+        for intence in intensity:
+            _true = intence.find_all(class_="grayFullBullishIcon")
+            _false = intence.find_all(class_="grayEmptyBullishIcon")
+
+            if len(_true) == 1:
+                intencity["1"] += 1
+                intencity["priority"] = 1
+
+            elif len(_true) == 2:
+                intencity["2"] += 1
+                intencity["priority"] = 2
+
+            elif len(_true) == 3:
+                intencity["3"] += 1
+                intencity["priority"] = 3
+
+        base[id_hour].update({"intensity": intencity})
+
+    for b in base:
+        result.append(base[b])
+
+    return result
+
+
+def get_flag(currency):
+    if currency == "EUR":
+        return "🇪🇺"
+
+    elif currency == "USD":
+        return "🇺🇸"
+
+    elif currency == "AUD":
+        return "🇦🇺"
+
+    elif currency == "NZD":
+        return "🇳🇿"
+
+    elif currency == "CAD":
+        return "🇨🇦"
+
+    elif currency == "CHF":
+        return "🇨🇭"
+
+    elif currency == "JPY":
+        return "🇯🇵"
+    elif currency == "GBP":
+        return "🇬🇧"
+
+
 if __name__ == "__main__":
-    df = final_table()
-    print(df)
+    news = get_event()
+    print(json.dumps(news, indent=2))

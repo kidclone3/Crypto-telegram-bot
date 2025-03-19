@@ -1,9 +1,7 @@
 import asyncio
-from collections import defaultdict
 import copy
 from datetime import datetime
 import json
-from operator import is_
 import time
 from tabulate import tabulate
 from telethon import Button, TelegramClient, events

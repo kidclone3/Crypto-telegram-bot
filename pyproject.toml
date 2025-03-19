@@ -27,6 +27,7 @@ bs4 = "^0.0.2"
 influxdb-client = "^1.48.0"
 schedule = "^1.2.2"
 cachetools = "^5.5.0"
+pytz = "^2025.1"
 
 
 [build-system]

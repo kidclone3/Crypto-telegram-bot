@@ -10,7 +10,11 @@ from src.services.price_bot import CryptoPriceBot
 
 
 class SignalService:
-    def __init__(self, db: AsyncIOMotorDatabase, client: TelegramClient):
+    def __init__(
+        self,
+        db: AsyncIOMotorDatabase,
+        client: TelegramClient,
+    ):
         self.db = db
         self.client = client
         self.is_running = False
@@ -55,7 +59,7 @@ class SignalService:
     async def check_alerts(self, timeframe: str):
         all_users = await self.db.signals.distinct("chat_id")
         price_bot = CryptoPriceBot()
-
+        print("Checking task for timeframe", timeframe)
         try:
             for user in all_users:
                 alerts = await self.get_all_monitors(user)
@@ -91,33 +95,38 @@ class SignalService:
                             user,
                             f"Error checking alerts for {symbol} in timeframe {timeframe}",
                         )
-
+                message_list_str = "\n".join(message_list)
                 if message_list:
-                    await self.client.send_message(user, "\n".join(message_list))
+                    await self.client.send_message(user, message_list_str)
+                # log
+                print(
+                    f"Checked alerts for {user} with result: {message_list_str or 'No alerts'}"
+                )
 
         finally:
             await price_bot.close()
+            print("Task completed")
 
     async def test_print(self):
         print("TESTING")
 
     def schedule_jobs(self):
         # Schedule 2h checks (every even hour UTC)
+        # Schedule 1m checks (every minute)
+        def create_check_task(timeframe):
+            return lambda: asyncio.create_task(self.check_alerts(timeframe))
+
+        schedule.every().minute.do(lambda: create_check_task("15m"))
+
         for hour in range(0, 24, 2):
-            schedule.every().day.at(f"{hour:02d}:00").do(
-                lambda: asyncio.create_task(self.check_alerts("2h"))
-            )
+            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(create_check_task("2h"))
 
         # Schedule 4h checks (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
         for hour in range(0, 24, 4):
-            schedule.every().day.at(f"{hour:02d}:00").do(
-                lambda: asyncio.create_task(self.check_alerts("4h"))
-            )
+            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(create_check_task("4h"))
 
         # Schedule daily check at 00:00 UTC
-        schedule.every().day.at("00:00").do(
-            lambda: asyncio.create_task(self.check_alerts("1d"))
-        )
+        schedule.every().day.at("00:01", "UTC").do(create_check_task("1d"))
 
     async def start_monitoring(self):
         self.is_running = True
