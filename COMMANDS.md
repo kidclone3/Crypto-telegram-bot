@@ -1,12 +1,5 @@
 # Crypto Price Bot Commands
 
-## Inline Mode
-You can use this bot in any chat by typing `@Tes1241t_bot` followed by your query. The bot supports:
-
-- **Price Queries**: Type a cryptocurrency symbol (e.g., `@Tes1241t_bot BTC/USDT`)
-- **AI Queries**: Ask any question about crypto (e.g., `@Tes1241t_bot What's the current market sentiment?`)
-- **Quick Access**: Get instant access to Fear & Greed Index and News
-
 ## Basic Commands
 - `/start` - Show welcome message
 - `/help` - Show help message
