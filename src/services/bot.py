@@ -14,7 +14,6 @@ from src.services.indicators import quant_agent
 from src.services.monitor_signal import SignalService
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
-from src.services.sentiment_service import get_latest_sentiment
 from src.utils import format_price_message, symbol_complete
 from src.core.db import motor_client
 
@@ -47,7 +46,8 @@ START_MSG = (
     "/delmon or /delete_monitor - Delete a monitor\n"
     "\t E.g: /delmon 1 - Delete monitor with ID 1\n"
     "/calendar - Get economic calendar events\n"
-    "/sentiment - Get latest market sentiment data\n\n"
+    "/llm - Send a prompt to the LLM\n"
+    "\t E.g: /llm What's the current price of Bitcoin?\n\n"
     "Configuration:\n"
     "/config - View or update bot settings\n"
     "\t E.g: /config is_alert on/off\n"
@@ -519,40 +519,67 @@ async def chart_command(event):
 @bot.on(events.NewMessage(pattern=r"^\/(?!start\b|sentiment\b)(s|signal)"))
 async def signal_command(event):
     try:
-        args = event.message.text.split(" ")
-        if len(args) < 2 or len(args) > 3:
-            await event.reply("⚠️ Please provide a symbol. Example: /signal btc\n")
+        # Parse and validate arguments
+        args = event.message.text.split()
+        if not (2 <= len(args) <= 3):
+            await event.reply(
+                "⚠️ Invalid command format.\n"
+                "Usage: /signal <symbol> [timeframe]\n"
+                "Example: /signal BTC 1h\n"
+                "Available timeframes: 1m, 5m, 15m, 1h, 4h, 1d"
+            )
             return
-        # Parse arguments
+
+        # Extract and validate symbol and timeframe
         symbol = symbol_complete(args[1].upper())
         timeframe = args[2].lower() if len(args) > 2 else "1h"
-
-        # Send loading message
-        msg = await event.reply(f"🔎 Finding signal for {symbol}...")
-
-        # Get candle data and create chart
-        price_bot = CryptoPriceBot()
-        df, _ = await price_bot.fetch_ohlcv_data(symbol, timeframe)
-        await price_bot.close()
-
-        if df is None or df.empty:
-            await msg.edit(f"❌ Unable to fetch data for {symbol}")
+        
+        # Validate timeframe
+        valid_timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"]
+        if timeframe not in valid_timeframes:
+            await event.reply(
+                "⚠️ Invalid timeframe.\n"
+                f"Available timeframes: {', '.join(valid_timeframes)}"
+            )
             return
 
-        # Call indicators.py to get signals
+        # Send loading message
+        msg = await event.reply(f"🔎 Analyzing signals for {symbol} ({timeframe})...")
+
+        # Fetch market data
+        price_bot = CryptoPriceBot()
+        try:
+            df, exchange = await price_bot.fetch_ohlcv_data(symbol, timeframe)
+        finally:
+            await price_bot.close()
+
+        if df is None or df.empty:
+            await msg.edit(f"❌ Unable to fetch market data for {symbol}")
+            return
+
+        # Get current price and calculate price change
+        current_price = df['close'].iloc[-1]
+        price_change = ((current_price - df['close'].iloc[0]) / df['close'].iloc[0]) * 100
+
+        # Get trading signals
         signals = await quant_agent(df)
 
-        # Delete loading message and send chart
-        await msg.delete()
-        await event.reply(
-            f"📈 Signals for {symbol} ({timeframe}):\n"
-            f"Current Price: ${df['close'].iloc[-1]:,.4f}\n"
-            f"\n\n{signals}",
-            parse_mode="html",
+        # Format the response message
+        response = (
+            f"📈 Trading Signals for {symbol} ({timeframe})\n\n"
+            f"Current Price: ${current_price:,.4f}\n"
+            f"Price Change: {price_change:+.2f}% {'🟢' if price_change >= 0 else '🔴'}\n"
+            f"Exchange: {exchange}\n\n"
+            f"Analysis:\n{signals}"
         )
 
+        # Send the formatted response
+        await msg.edit(response, parse_mode="html")
+
+    except ValueError as e:
+        await event.reply(f"❌ Invalid input: {str(e)}")
     except Exception as e:
-        await event.reply(f"❌ Error: {str(e)}")
+        await event.reply(f"❌ An unexpected error occurred: {str(e)}")
 
 
 @bot.on(events.NewMessage(pattern=r"^\/calendar"))
@@ -633,8 +660,45 @@ async def delete_monitor_symbol(event):
         buttons=keyboard,
     )
 
+@bot.on(events.NewMessage(pattern=r"^\/llm"))
+async def llm_command(event):
+    try:
+        # Get the prompt from the message
+        args = event.message.text.split(maxsplit=1)
+        if len(args) < 2:
+            await event.reply(
+                "⚠️ Please provide a prompt.\n"
+                "Usage: /llm <your prompt>\n"
+                "Example: /llm What's the current price of Bitcoin?"
+            )
+            return
 
-@bot.on(events.NewMessage(pattern=r"^\/sentiment$"))
-async def get_sentiment(event):
-    sentiment_str = get_latest_sentiment()
-    await event.reply(f"📊 Latest sentiment data:\n{sentiment_str}")
+        prompt = args[1]
+        msg = await event.reply("🤔 Processing your request...")
+        
+        # Run the llm command in a subprocess
+        process = await asyncio.create_subprocess_exec(
+            'llm', prompt,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        # Wait for the process to complete and get output
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "Unknown error occurred"
+            await msg.edit(f"❌ Error processing request: {error_msg}")
+            return
+            
+        # Decode and format the output
+        output = stdout.decode().strip()
+        if not output:
+            await msg.edit("❌ No response received")
+            return
+            
+        # Send the response
+        await msg.edit(f"🤖 Response:\n\n{output}")
+        
+    except Exception as e:
+        await event.reply(f"❌ Error: {str(e)}")
