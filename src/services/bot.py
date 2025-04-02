@@ -17,8 +17,9 @@ from src.services.indicators import quant_agent
 from src.services.monitor_signal import SignalService
 from src.services.price_bot import CryptoPriceBot
 from src.core.config import settings
-from src.utils import format_price_message, symbol_complete
+from src.utils.tools import format_price_message, symbol_complete
 from src.core.db import motor_client
+from src.utils.logger import logger
 
 @lru_cache(maxsize=1)
 def setup_logger(name, file_path=None):
