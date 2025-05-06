@@ -11,96 +11,23 @@ from telethon import Button, TelegramClient, events
 from telethon.types import DocumentAttributeFilename
 import pandas as pd
 
-from services.economic_calendar_table import final_table
-from services.monitor_service import MonitorService
-from services.indicators import quant_agent
-from services.monitor_signal import SignalService
-from bot.price_bot import CryptoPriceBot
-from core.config.config import settings
-from utils.tools import format_price_message, symbol_complete
-from db.db import motor_client
-from utils.logger import logger
+from src.core.const import DEFAULT_CONFIG, PATTERN_TWO_ARGS, START_MSG
+from src.services.economic_calendar_table import final_table
+from src.services.monitor_service import MonitorService
+from src.services.indicators import quant_agent
+from src.services.monitor_signal import SignalService
+from src.bot.price_bot import CryptoPriceBot
+from src.core.config import settings
+from src.db.db import motor_client
+from src.utils.logger import logger
+from src.utils.tools import format_price_message, symbol_complete
 
-@lru_cache(maxsize=1)
-def setup_logger(name, file_path=None):
-    if file_path is None:
-        file_path = os.path.join(
-            os.environ.get("LOG_FOLDER", "."),
-            "%s_%s.log" % (name, datetime.now().strftime("%Y-%m-%d")),
-        )
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
-
-    file_handler = logging.FileHandler(file_path)
-    formatter = logging.Formatter(
-        "[%(asctime)s] %(levelname)s %(filename)s line %(lineno)d: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    # Add stdout handler
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(formatter)
-    stdout_handler.setLevel(logging.INFO)
-    logger.addHandler(stdout_handler)
-    return logger
-
-logger = setup_logger("telegram_bot")
-
-START_MSG = (
-    "👋 Welcome to the Crypto Price Bot!\n\n"
-    "Available commands:\n"
-    "/start - Show this welcome message\n"
-    "/help - Show this help message\n"
-    "/ping - Check if the bot is online\n\n"
-    "Price & Alerts:\n"
-    "/a or /alert - Manage price alerts\n"
-    "\t E.g: /a BTC 1000000 - Set alert on BTC at 100k\n"
-    "\t /a - List all active alerts\n"
-    "/dela or /delete_alert - Delete a price alert\n"
-    "\t E.g: /dela 1 - Delete alert with ID 1\n"
-    "/p or /price - Get current price\n"
-    "\t E.g: /p BTC/USDT\n\n"
-    "Technical Analysis:\n"
-    "/f or /filter - Filter price changes by timeframe and percentage\n"
-    "\t E.g: /f 15m 1 - Show coins with 1% change in 15 minutes\n"
-    "/c or /chart - Get price chart for a cryptocurrency\n"
-    "\t E.g: /c BTC/USDT 4h - Get 4-hour chart\n"
-    "\t Available timeframes: 1m, 5m, 15m, 1h, 4h, 1d\n"
-    "/s or /signal - Get trading signal for a cryptocurrency\n"
-    "\t E.g: /s BTC 1h - Get 1-hour trading signals\n\n"
-    "Market Monitoring:\n"
-    "/mon or /monitor - Manage symbol monitoring\n"
-    "\t E.g: /mon BTC ETH - Monitor BTC and ETH\n"
-    "\t /mon - List all monitored symbols\n"
-    "/delmon or /delete_monitor - Delete a monitor\n"
-    "\t E.g: /delmon 1 - Delete monitor with ID 1\n"
-    "/calendar - Get economic calendar events\n"
-    "/llm - Send a prompt to the LLM\n"
-    "\t E.g: /llm What's the current price of Bitcoin?\n\n"
-    "Configuration:\n"
-    "/config - View or update bot settings\n"
-    "\t E.g: /config is_alert on/off\n"
-    "\t E.g: /config price_threshold 0.01\n"
-    "\t E.g: /config alert_interval 1\n"
-    "\t E.g: /config is_future on/off"
-)
-
-DEFAULT_CONFIG = {
-    "is_alert": "off",
-    "price_threshold": 0.01,
-    "alert_interval": 1,
-    "is_future": "off",
-}
-
-PATTERN_TWO_ARGS = r"\s+([a-zA-Z]+)(?:\s+(\d+[mh]))?$"
-
-loop = asyncio.get_event_loop()
-
+# Initialize client but DO NOT start it here.
+# Let Telethon pick up the loop when .start() is called.
 bot: TelegramClient = TelegramClient(
-    "bot", settings.api_id, settings.api_hash, timeout=5, auto_reconnect=True, loop=loop
-).start(bot_token=settings.bot_token)
+    "bot", settings.api_id, settings.api_hash, timeout=5, auto_reconnect=True
+)
+# Note: 'bot' is used by decorators below. This is the instance.
 
 db = motor_client["crypto"]
 
@@ -180,7 +107,9 @@ async def config_command(event):
             config_value = args[2]
 
             if config_key not in config.keys():
-                logger.warning(f"Invalid configuration key {config_key} for chat_id: {chat_id}")
+                logger.warning(
+                    f"Invalid configuration key {config_key} for chat_id: {chat_id}"
+                )
                 await event.reply("⚠️ Invalid configuration key.")
                 return
 
@@ -189,14 +118,22 @@ async def config_command(event):
 
             if config_key == "is_alert":
                 if validate_on_off(config_value.lower()):
-                    logger.warning(f"Invalid value for is_alert: {config_value} for chat_id: {chat_id}")
-                    await event.reply("⚠️ Invalid value for is_alert. Use 'on' or 'off'.")
+                    logger.warning(
+                        f"Invalid value for is_alert: {config_value} for chat_id: {chat_id}"
+                    )
+                    await event.reply(
+                        "⚠️ Invalid value for is_alert. Use 'on' or 'off'."
+                    )
                     return
                 config_value = config_value.lower()
             elif config_key == "is_future":
                 if validate_on_off(config_value.lower()):
-                    logger.warning(f"Invalid value for is_future: {config_value} for chat_id: {chat_id}")
-                    await event.reply("⚠️ Invalid value for is_future. Use 'on' or 'off'.")
+                    logger.warning(
+                        f"Invalid value for is_future: {config_value} for chat_id: {chat_id}"
+                    )
+                    await event.reply(
+                        "⚠️ Invalid value for is_future. Use 'on' or 'off'."
+                    )
                     return
                 config_value = config_value.lower()
             elif config_key == "price_threshold":
@@ -204,12 +141,16 @@ async def config_command(event):
             elif config_key == "alert_interval":
                 config_value = int(config_value)
 
-            logger.info(f"Updating configuration for chat_id: {chat_id}, key: {config_key}, value: {config_value}")
+            logger.info(
+                f"Updating configuration for chat_id: {chat_id}, key: {config_key}, value: {config_value}"
+            )
             db.config.update_one(
                 {"chat_id": chat_id},
                 {"$set": {config_key: config_value}},
             )
-            await event.reply(f"✅ Configuration updated: {config_key} = {config_value}")
+            await event.reply(
+                f"✅ Configuration updated: {config_key} = {config_value}"
+            )
     except Exception as e:
         logger.error(f"Error in /config command for chat_id: {event.chat_id}: {str(e)}")
         await event.reply("❌ An error occurred. Please try again later.")
@@ -300,7 +241,7 @@ async def delete_alert(event):
 
     symbols_to_delete = [symbol_complete(s.upper()) for s in args[1:]]
     logger.info(f"Looking for alerts with symbols: {symbols_to_delete}")
-    
+
     matching_alerts = []
     for i, alert in enumerate(alerts, 1):
         if any(alert.get("symbol") == s for s in symbols_to_delete):
@@ -308,7 +249,9 @@ async def delete_alert(event):
 
     if not matching_alerts:
         logger.info(f"No matching alerts found for symbols: {symbols_to_delete}")
-        await event.reply(f"❌ No alerts found with symbols: {', '.join(symbols_to_delete)}")
+        await event.reply(
+            f"❌ No alerts found with symbols: {', '.join(symbols_to_delete)}"
+        )
         return
 
     logger.info(f"Found {len(matching_alerts)} matching alerts for deletion")
@@ -320,14 +263,17 @@ async def delete_alert(event):
 
     keyboard = [
         [
-            Button.inline("Yes", f"delete_alert_yes_{','.join(str(a[0]) for a in matching_alerts)}"),
+            Button.inline(
+                "Yes",
+                f"delete_alert_yes_{','.join(str(a[0]) for a in matching_alerts)}",
+            ),
             Button.inline("No", "delete_alert_no"),
         ]
     ]
-    
+
     await event.reply(
-        f"❓ Are you sure you want to delete these alerts?\n\n" +
-        "\n\n".join(message_parts),
+        "❓ Are you sure you want to delete these alerts?\n\n"
+        + "\n\n".join(message_parts),
         buttons=keyboard,
     )
 
@@ -335,7 +281,9 @@ async def delete_alert(event):
 @bot.on(events.CallbackQuery)
 async def callback_handler(event):
     if event.data.startswith(b"delete_alert_yes_"):
-        alert_ids = [int(id) for id in event.data.decode("utf-8").split("_")[-1].split(",")]
+        alert_ids = [
+            int(id) for id in event.data.decode("utf-8").split("_")[-1].split(",")
+        ]
         logger.info(f"Deleting alerts with IDs: {alert_ids}")
         success = True
         for alert_id in alert_ids:
@@ -356,7 +304,9 @@ async def callback_handler(event):
         await event.answer("❌ Deletion canceled.")
 
     elif event.data.startswith(b"delmon_yes_"):
-        monitor_ids = [int(id) for id in event.data.decode("utf-8").split("_")[-1].split(",")]
+        monitor_ids = [
+            int(id) for id in event.data.decode("utf-8").split("_")[-1].split(",")
+        ]
         logger.info(f"Deleting monitors with IDs: {monitor_ids}")
         success = True
         for monitor_id in monitor_ids:
@@ -385,7 +335,9 @@ async def price_command(event):
     try:
         args = event.message.text.split()
         if len(args) != 2:
-            logger.warning(f"Invalid /price command format from chat_id: {event.chat_id}")
+            logger.warning(
+                f"Invalid /price command format from chat_id: {event.chat_id}"
+            )
             await event.reply("⚠️ Please provide a symbol. Example: /price BTC/USDT\n")
             return
 
@@ -398,12 +350,16 @@ async def price_command(event):
         await price_bot.close()
 
         if not ticker_data:
-            logger.warning(f"Unable to fetch price data for {symbol} for chat_id: {event.chat_id}")
+            logger.warning(
+                f"Unable to fetch price data for {symbol} for chat_id: {event.chat_id}"
+            )
             await msg.edit(f"❌ Unable to fetch data for {symbol}")
             return
 
         message = format_price_message(ticker_data)
-        logger.info(f"Successfully fetched price for {symbol} for chat_id: {event.chat_id}")
+        logger.info(
+            f"Successfully fetched price for {symbol} for chat_id: {event.chat_id}"
+        )
         await msg.delete()
         await event.reply(message)
     except Exception as e:
@@ -425,7 +381,9 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
         if len(args) == 3:
             _timeframe = args[1]
             _threshold = float(args[2])
-            logger.info(f"Using custom timeframe {_timeframe} and threshold {_threshold} for chat_id: {event.chat_id}")
+            logger.info(
+                f"Using custom timeframe {_timeframe} and threshold {_threshold} for chat_id: {event.chat_id}"
+            )
 
         df = pd.read_csv("top_200_currencies.csv")
         symbols = df["symbol"].tolist()
@@ -449,11 +407,15 @@ async def filter_command(event, timeframe: str = "15m", threshold: float = 1.0):
             emoji = "🟢" if data["pct_change"] >= 0 else "🔴"
             message += f"""{emoji} {data["symbol"]}: {data["pct_change"]:+.2f}%\n"""
 
-        logger.info(f"Successfully generated filter results for chat_id: {event.chat_id}")
+        logger.info(
+            f"Successfully generated filter results for chat_id: {event.chat_id}"
+        )
         await msg.delete()
         await event.reply(message)
         end_time = time.time()
-        logger.info(f"Filter command completed in {end_time - start_time} seconds for chat_id: {event.chat_id}")
+        logger.info(
+            f"Filter command completed in {end_time - start_time} seconds for chat_id: {event.chat_id}"
+        )
     except Exception as e:
         logger.error(f"Error in /filter command for chat_id: {event.chat_id}: {str(e)}")
         await event.reply(f"❌ Error: {str(e)}")
@@ -467,7 +429,9 @@ async def chart_command(event):
         is_future_on = config.get("is_future", "off") == "on"
         args = event.message.text.split()
         if len(args) < 2:
-            logger.warning(f"Invalid /chart command format from chat_id: {event.chat_id}")
+            logger.warning(
+                f"Invalid /chart command format from chat_id: {event.chat_id}"
+            )
             await event.reply(
                 "⚠️ Please provide a symbol. Example: /chart BTC/USDT 4h\n"
                 "Available timeframes: 1m, 5m, 15m, 1h, 4h, 1d\n"
@@ -476,7 +440,9 @@ async def chart_command(event):
 
         symbol = symbol_complete(args[1].upper())
         timeframe = args[2].lower() if len(args) > 2 else "1h"
-        logger.info(f"Generating {timeframe} chart for {symbol} for chat_id: {event.chat_id}")
+        logger.info(
+            f"Generating {timeframe} chart for {symbol} for chat_id: {event.chat_id}"
+        )
 
         msg = await event.reply(f"📊 Generating {timeframe} chart for {symbol}...")
         price_bot = CryptoPriceBot()
@@ -491,7 +457,9 @@ async def chart_command(event):
         await price_bot.close()
 
         if df is None or df.empty:
-            logger.warning(f"Unable to fetch chart data for {symbol} for chat_id: {event.chat_id}")
+            logger.warning(
+                f"Unable to fetch chart data for {symbol} for chat_id: {event.chat_id}"
+            )
             await msg.edit(f"❌ Unable to fetch data for {symbol}")
             return
 
@@ -541,7 +509,9 @@ async def chart_command(event):
             f"Volume previous 24h: ${volume_previous_24h:,.2f}\t, change {'🟢' if volume_change >= 0 else '🔴'} {volume_change:,.2f}%\n"
         )
 
-        logger.info(f"Successfully generated chart for {symbol} for chat_id: {event.chat_id}")
+        logger.info(
+            f"Successfully generated chart for {symbol} for chat_id: {event.chat_id}"
+        )
         await msg.delete()
         await bot.send_file(
             event.chat_id, chart_buf, caption=caption, force_document=False
@@ -594,7 +564,9 @@ async def chart_command(event):
                 f"Volume previous 24h: ${volume_previous_24h:,.2f}\t, change {'🟢' if volume_change >= 0 else '🔴'} {volume_change:,.2f}%\n"
             )
 
-            logger.info(f"Successfully generated future chart for {symbol} for chat_id: {event.chat_id}")
+            logger.info(
+                f"Successfully generated future chart for {symbol} for chat_id: {event.chat_id}"
+            )
             await bot.send_file(
                 event.chat_id,
                 chart_buf,
@@ -614,7 +586,9 @@ async def signal_command(event):
     try:
         args = event.message.text.split()
         if not (2 <= len(args) <= 3):
-            logger.warning(f"Invalid /signal command format from chat_id: {event.chat_id}")
+            logger.warning(
+                f"Invalid /signal command format from chat_id: {event.chat_id}"
+            )
             await event.reply(
                 "⚠️ Invalid command format.\n"
                 "Usage: /signal <symbol> [timeframe]\n"
@@ -625,17 +599,21 @@ async def signal_command(event):
 
         symbol = symbol_complete(args[1].upper())
         timeframe = args[2].lower() if len(args) > 2 else "1h"
-        
+
         valid_timeframes = ["1m", "5m", "15m", "1h", "4h", "1d"]
         if timeframe not in valid_timeframes:
-            logger.warning(f"Invalid timeframe {timeframe} for chat_id: {event.chat_id}")
+            logger.warning(
+                f"Invalid timeframe {timeframe} for chat_id: {event.chat_id}"
+            )
             await event.reply(
                 "⚠️ Invalid timeframe.\n"
                 f"Available timeframes: {', '.join(valid_timeframes)}"
             )
             return
 
-        logger.info(f"Analyzing signals for {symbol} ({timeframe}) for chat_id: {event.chat_id}")
+        logger.info(
+            f"Analyzing signals for {symbol} ({timeframe}) for chat_id: {event.chat_id}"
+        )
         msg = await event.reply(f"🔎 Analyzing signals for {symbol} ({timeframe})...")
 
         price_bot = CryptoPriceBot()
@@ -645,15 +623,21 @@ async def signal_command(event):
             await price_bot.close()
 
         if df is None or df.empty:
-            logger.warning(f"Unable to fetch market data for {symbol} for chat_id: {event.chat_id}")
+            logger.warning(
+                f"Unable to fetch market data for {symbol} for chat_id: {event.chat_id}"
+            )
             await msg.edit(f"❌ Unable to fetch market data for {symbol}")
             return
 
-        current_price = df['close'].iloc[-1]
-        price_change = ((current_price - df['close'].iloc[0]) / df['close'].iloc[0]) * 100
+        current_price = df["close"].iloc[-1]
+        price_change = (
+            (current_price - df["close"].iloc[0]) / df["close"].iloc[0]
+        ) * 100
         signals = await quant_agent(df)
 
-        logger.info(f"Successfully generated signals for {symbol} for chat_id: {event.chat_id}")
+        logger.info(
+            f"Successfully generated signals for {symbol} for chat_id: {event.chat_id}"
+        )
         response = (
             f"📈 Trading Signals for {symbol} ({timeframe})\n\n"
             f"Current Price: ${current_price:,.4f}\n"
@@ -663,7 +647,9 @@ async def signal_command(event):
         )
         await msg.edit(response, parse_mode="html")
     except ValueError as e:
-        logger.error(f"ValueError in /signal command for chat_id: {event.chat_id}: {str(e)}")
+        logger.error(
+            f"ValueError in /signal command for chat_id: {event.chat_id}: {str(e)}"
+        )
         await event.reply(f"❌ Invalid input: {str(e)}")
     except Exception as e:
         logger.error(f"Error in /signal command for chat_id: {event.chat_id}: {str(e)}")
@@ -684,9 +670,13 @@ async def get_all_economic_calendar(event):
                     f"Actual: {row['Actual']} | Forecast: {row['Forecast']} | Previous: {row['Previous']}"
                 )
                 await bot.send_message(event.chat_id, message)
-            logger.info(f"Successfully sent economic calendar data to chat_id: {event.chat_id}")
+            logger.info(
+                f"Successfully sent economic calendar data to chat_id: {event.chat_id}"
+            )
     except Exception as e:
-        logger.error(f"Error in /calendar command for chat_id: {event.chat_id}: {str(e)}")
+        logger.error(
+            f"Error in /calendar command for chat_id: {event.chat_id}: {str(e)}"
+        )
         await event.reply(f"❌ Error: {str(e)}")
 
 
@@ -741,7 +731,7 @@ async def delete_monitor_symbol(event):
 
     symbols_to_delete = [symbol_complete(s.upper()) for s in args[1:]]
     logger.info(f"Looking for monitors with symbols: {symbols_to_delete}")
-    
+
     matching_monitors = []
     for i, symbol in enumerate(signals, 1):
         if any(symbol == s for s in symbols_to_delete):
@@ -749,7 +739,9 @@ async def delete_monitor_symbol(event):
 
     if not matching_monitors:
         logger.info(f"No matching monitors found for symbols: {symbols_to_delete}")
-        await event.reply(f"❌ No monitors found with symbols: {', '.join(symbols_to_delete)}")
+        await event.reply(
+            f"❌ No monitors found with symbols: {', '.join(symbols_to_delete)}"
+        )
         return
 
     logger.info(f"Found {len(matching_monitors)} matching monitors for deletion")
@@ -759,16 +751,19 @@ async def delete_monitor_symbol(event):
 
     keyboard = [
         [
-            Button.inline("Yes", f"delmon_yes_{','.join(str(m[0]) for m in matching_monitors)}"),
+            Button.inline(
+                "Yes", f"delmon_yes_{','.join(str(m[0]) for m in matching_monitors)}"
+            ),
             Button.inline("No", "delmon_no"),
         ]
     ]
-    
+
     await event.reply(
-        f"❓ Are you sure you want to delete these monitors?\n\n" +
-        "\n\n".join(message_parts),
+        f"❓ Are you sure you want to delete these monitors?\n\n"
+        + "\n\n".join(message_parts),
         buttons=keyboard,
     )
+
 
 @bot.on(events.NewMessage(pattern=r"^\/llm"))
 async def llm_command(event):
@@ -785,32 +780,45 @@ async def llm_command(event):
             return
 
         prompt = args[1]
-        logger.info(f"Processing LLM request for chat_id: {event.chat_id}, prompt: {prompt}")
-        msg = await event.reply("🤔 Processing your request...")
-        
-        process = await asyncio.create_subprocess_exec(
-            'llm', prompt,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        logger.info(
+            f"Processing LLM request for chat_id: {event.chat_id}, prompt: {prompt}"
         )
-        
+        msg = await event.reply("🤔 Processing your request...")
+
+        process = await asyncio.create_subprocess_exec(
+            "llm",
+            prompt,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
         stdout, stderr = await process.communicate()
-        
+
         if process.returncode != 0:
             error_msg = stderr.decode() if stderr else "Unknown error occurred"
             logger.error(f"LLM process error for chat_id: {event.chat_id}: {error_msg}")
             await msg.edit(f"❌ Error processing request: {error_msg}")
             return
-            
+
         output = stdout.decode().strip()
         if not output:
             logger.warning(f"Empty LLM response for chat_id: {event.chat_id}")
             await msg.edit("❌ No response received")
             return
-            
+
         logger.info(f"Successfully processed LLM request for chat_id: {event.chat_id}")
         await msg.edit(f"🤖 Response:\n\n{output}")
-        
+
     except Exception as e:
         logger.error(f"Error in /llm command for chat_id: {event.chat_id}: {str(e)}")
         await event.reply(f"❌ Error: {str(e)}")
+
+
+async def initialize_and_start_bot():
+    """Initializes and starts the Telegram bot client."""
+    if not bot.is_connected():  # Or check if already started
+        logger.info("Starting Telegram bot client...")
+        await bot.start(bot_token=settings.bot_token)
+        logger.info("Telegram bot client started.")
+    else:
+        logger.info("Telegram bot client already connected/started.")

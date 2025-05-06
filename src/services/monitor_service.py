@@ -5,7 +5,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from telethon import TelegramClient
 
-from bot.price_bot import CryptoPriceBot
+from src.bot.price_bot import CryptoPriceBot
 
 
 class MonitorService:

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 session="trading-algo"
-script_path="bot.py"  # Path to your Python script
+script_path="main.py"  # Path to your Python script
 
 
 # Check if the tmux session exists

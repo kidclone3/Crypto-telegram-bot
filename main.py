@@ -4,7 +4,7 @@ import asyncio
 import uvicorn
 from src.utils.logger import logger
 from src.main import main as bot_main
-from src.api.v1.endpoints.app import app as api_app
+# from src.api.v1.endpoints.app import app as api_app
 
 
 async def run_bot():
@@ -16,20 +16,20 @@ async def run_bot():
         raise
 
 
-async def run_api():
-    """Run the FastAPI service"""
-    try:
-        config = uvicorn.Config(
-            api_app,
-            host="0.0.0.0",
-            port=8000,
-            log_level="info"
-        )
-        server = uvicorn.Server(config)
-        await server.serve()
-    except Exception as e:
-        logger.error(f"API service error: {str(e)}", exc_info=True)
-        raise
+# async def run_api():
+#     """Run the FastAPI service"""
+#     try:
+#         config = uvicorn.Config(
+#             api_app,
+#             host="0.0.0.0",
+#             port=8000,
+#             log_level="info"
+#         )
+#         server = uvicorn.Server(config)
+#         await server.serve()
+#     except Exception as e:
+#         logger.error(f"API service error: {str(e)}", exc_info=True)
+#         raise
 
 
 async def main():
@@ -38,11 +38,10 @@ async def main():
     
     # Create tasks for both services
     bot_task = asyncio.create_task(run_bot())
-    api_task = asyncio.create_task(run_api())
-    
+
     try:
         # Wait for both tasks to complete
-        await asyncio.gather(bot_task, api_task)
+        await asyncio.gather(bot_task)
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down...")
     except Exception as e:
