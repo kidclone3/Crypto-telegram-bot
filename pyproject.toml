@@ -29,7 +29,10 @@ schedule = "^1.2.2"
 cachetools = "^5.5.0"
 pytz = "^2025.1"
 mcp-client-cli = "^1.0.1"
-
+pytest = "^8.3.5"
+pytest-asyncio = "^0.24.0"
+pytest-mock = "^3.14.0"
+respx = "^0.21.1"
 
 [build-system]
 requires = ["poetry-core"]

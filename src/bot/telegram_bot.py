@@ -11,15 +11,15 @@ from telethon import Button, TelegramClient, events
 from telethon.types import DocumentAttributeFilename
 import pandas as pd
 
-from src.services.economic_calendar_table import final_table
-from src.services.monitor_service import MonitorService
-from src.services.indicators import quant_agent
-from src.services.monitor_signal import SignalService
-from src.services.price_bot import CryptoPriceBot
-from src.core.config import settings
-from src.utils.tools import format_price_message, symbol_complete
-from src.core.db import motor_client
-from src.utils.logger import logger
+from services.economic_calendar_table import final_table
+from services.monitor_service import MonitorService
+from services.indicators import quant_agent
+from services.monitor_signal import SignalService
+from bot.price_bot import CryptoPriceBot
+from core.config.config import settings
+from utils.tools import format_price_message, symbol_complete
+from db.db import motor_client
+from utils.logger import logger
 
 @lru_cache(maxsize=1)
 def setup_logger(name, file_path=None):

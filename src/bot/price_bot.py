@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
 
-from src.services.MultiKernelRegression import (
+from services.MultiKernelRegression import (
     apply_multi_kernel_regression,
     viewable_signal,
 )
-from src.services.custom_indicators.pinbar_detector import PinbarDetector
+from services.custom_indicators.pinbar_detector import PinbarDetector
 
 
 class CryptoPriceBot:

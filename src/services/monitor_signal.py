@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from telethon import TelegramClient
 
-from src.services.MultiKernelRegression import apply_multi_kernel_regression
-from src.services.price_bot import CryptoPriceBot
+from services.MultiKernelRegression import apply_multi_kernel_regression
+from bot.price_bot import CryptoPriceBot
 
 
 class SignalService:

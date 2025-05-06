@@ -1,8 +1,8 @@
 from telethon.types import Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.config import MESSAGE_LIMIT
-from src.schemas.message import (
+from core.config.config import MESSAGE_LIMIT
+from schemas.message import (
     Message,
     Messages,
     MessageCreate,

@@ -44,7 +44,7 @@ def format_indicator_message(price, reasoning, overall_signal, confidence):
 
     # Format header
     message = [
-        f"💰 Price: ${price:.4f} USDT",
+        f"💰 Price: ${price:,.4f} USDT",
         f"📊 Signal: {signal_emojis[overall_signal]} {overall_signal.upper()}",
         f"🎯 Confidence: {confidence:.1%}\n",
     ]

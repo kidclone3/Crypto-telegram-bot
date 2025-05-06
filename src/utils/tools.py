@@ -5,8 +5,9 @@ import time
 
 def symbol_complete(symbol: str) -> str:
     """Complete the symbol with /USDT if not present"""
-    result = symbol + "/USDT" if not symbol.endswith("USDT") else symbol
-    return result.upper()
+    symbol = symbol.upper()
+    result = symbol if symbol.endswith("/USDT") else symbol + "/USDT"
+    return result
 
 
 def time_it(func):
@@ -38,7 +39,7 @@ def format_price_message(data: dict) -> str:
     # Header with current price and basic info
     message = (
         f"💰 {data['symbol']} Price Information\n"
-        f"📅 {datetime.fromtimestamp(data['timestamp']/1000).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+        f"📅 {datetime.fromtimestamp(data['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
         f"Current Price: ${data['current_price']:,.4f}\n"
         f"24h Range: ${data['low_24h']:,.4f} - ${data['high_24h']:,.4f}\n"
         f"24h Volume: ${data['volume']:,.2f}\n\n"

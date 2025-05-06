@@ -60,9 +60,9 @@ def find_event(element):
 
 def find_value(id, element):
     """find the value of each rows of Actual Forecast and Previous"""
-    actual = element.find("td", id=f"eventActual_{id}").text
-    forecast = element.find("td", id=f"eventForecast_{id}").text
-    previous = element.find("td", id=f"eventPrevious_{id}").text
+    actual = element.find("td", id=f"eventActual_{id}").text.strip()
+    forecast = element.find("td", id=f"eventForecast_{id}").text.strip()
+    previous = element.find("td", id=f"eventPrevious_{id}").text.strip()
 
     return actual, forecast, previous
 
