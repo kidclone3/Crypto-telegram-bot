@@ -1,4 +1,4 @@
-import logging
+from src.utils.logger import logger
 from typing import Optional
 import ccxt.async_support as ccxt
 from ccxt.base.errors import BadSymbol
@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
 
-from services.MultiKernelRegression import (
+from src.services.MultiKernelRegression import (
     apply_multi_kernel_regression,
     viewable_signal,
 )
-from services.custom_indicators.pinbar_detector import PinbarDetector
+from src.services.custom_indicators.pinbar_detector import PinbarDetector
 
 
 class CryptoPriceBot:
@@ -202,15 +202,15 @@ class CryptoPriceBot:
                 buf.seek(0)
                 return buf
             except Exception as save_error:
-                logging.error(f"Error saving chart: {str(save_error)}")
+                logger.error(f"Error saving chart: {str(save_error)}")
                 return None
 
         except ValueError as ve:
-            logging.error(f"Validation error: {str(ve)}")
+            logger.error(f"Validation error: {str(ve)}")
             return None
 
         except Exception as e:
-            logging.error(f"Error creating chart: {str(e)}")
+            logger.error(f"Error creating chart: {str(e)}")
             return None
 
         finally:
