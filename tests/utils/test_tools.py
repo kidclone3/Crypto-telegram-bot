@@ -1,6 +1,8 @@
-import pytest
 from datetime import datetime
-from src.utils.tools import symbol_complete, format_price_message
+
+import pytest
+
+from telegram_bot.utils.tools import format_price_message, symbol_complete
 
 
 def test_symbol_complete_no_usdt():
@@ -109,7 +111,7 @@ def test_format_price_message_missing_timeframes():
 
 
 # Example of testing the time_it decorator (Optional, requires a helper function)
-# from src.utils.tools import time_it
+# from telegram_bot.utils.tools import time_it
 # import time
 
 # @time_it

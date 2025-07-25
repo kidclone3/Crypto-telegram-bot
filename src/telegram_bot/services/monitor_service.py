@@ -1,11 +1,12 @@
 import asyncio
+
 from collections import defaultdict
 from datetime import datetime
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from telethon import TelegramClient
 
-from src.bot.price_bot import CryptoPriceBot
+from telegram_bot.bot.price_bot import CryptoPriceBot
 
 
 class MonitorService:
@@ -33,7 +34,9 @@ class MonitorService:
         price = data.get("price")
         msg = data.get("msg", None)
         monitor["data"].append({"symbol": symbol, "price": price, "msg": msg})
-        await db.alerts.update_one({"chat_id": chat_id}, {"$set": monitor}, upsert=True)
+        await db.alerts.update_one(
+            {"chat_id": chat_id}, {"$set": monitor}, upsert=True
+        )
         return len(monitor["data"])
 
     @classmethod
@@ -68,7 +71,9 @@ class MonitorService:
 
         list_monitors["data"].pop(id - 1)
 
-        await db.alerts.update_one({"chat_id": chat_id}, {"$set": list_monitors})
+        await db.alerts.update_one(
+            {"chat_id": chat_id}, {"$set": list_monitors}
+        )
 
         return True
 
@@ -108,7 +113,9 @@ class MonitorService:
                         for target_price, msg in values:
                             # Calculate price difference percentage
                             price_diff_pct = (
-                                abs(current_price - target_price) / target_price * 100
+                                abs(current_price - target_price)
+                                / target_price
+                                * 100
                             )
                             # If price is within threshold, send alert
                             if price_diff_pct <= price_threshold:

@@ -1,7 +1,8 @@
-import pytest
-import pandas as pd
 import numpy as np
-from src.services.MultiKernelRegression import (
+import pandas as pd
+import pytest
+
+from telegram_bot.services.MultiKernelRegression import (
     MultiKernelRegression,
     apply_multi_kernel_regression,
     viewable_signal,
@@ -41,7 +42,7 @@ def sample_regression_df():
         "tent",
         "wave",
         "power",
-        "morters"
+        "morters",
     ],
 )
 def test_mkr_class_init_and_kernels(kernel_type):
@@ -67,7 +68,10 @@ def test_mkr_class_init_and_kernels(kernel_type):
 @pytest.mark.parametrize("repaint_flag", [True, False])
 def test_mkr_calculate(sample_regression_df, repaint_flag):
     mkr = MultiKernelRegression(
-        bandwidth=14, kernel_type="laplace", deviations=2.0, repaint=repaint_flag
+        bandwidth=14,
+        kernel_type="laplace",
+        deviations=2.0,
+        repaint=repaint_flag,
     )
     data = sample_regression_df["close"].values
     regression, upper, lower, up_signals, down_signals = mkr.calculate(data)
@@ -91,9 +95,12 @@ def test_mkr_calculate(sample_regression_df, repaint_flag):
 
     assert np.all(upper >= lower)  # Upper band should be >= lower band
     # Assert signals are lists of boolean values (True or False)
-    assert all(isinstance(signal, bool) for signal in up_signals.tolist()), "Signals should be True or False"
-    assert all(isinstance(signal, bool) for signal in down_signals.tolist()), "Signals should be True or False"
-
+    assert all(isinstance(signal, bool) for signal in up_signals.tolist()), (
+        "Signals should be True or False"
+    )
+    assert all(isinstance(signal, bool) for signal in down_signals.tolist()), (
+        "Signals should be True or False"
+    )
 
 
 # Test the apply_multi_kernel_regression function
@@ -131,28 +138,42 @@ def test_viewable_signal(sample_regression_df):
     assert "signal_val_down" in df_viewable.columns
 
     # Check that values are NaN where signal is False
-    assert df_viewable.loc[~df_viewable["signal_up"], "signal_val_up"].isna().all()
-    assert df_viewable.loc[~df_viewable["signal_down"], "signal_val_down"].isna().all()
+    assert (
+        df_viewable.loc[~df_viewable["signal_up"], "signal_val_up"].isna().all()
+    )
+    assert (
+        df_viewable.loc[~df_viewable["signal_down"], "signal_val_down"]
+        .isna()
+        .all()
+    )
 
     # Check that values are calculated where signal is True
     if df_viewable["signal_up"].any():
         # No NaN values where signal_up is True
-        assert not df_viewable.loc[df_viewable["signal_up"], "signal_val_up"].isna().any()
+        assert (
+            not df_viewable.loc[df_viewable["signal_up"], "signal_val_up"]
+            .isna()
+            .any()
+        )
 
         # Verify calculation: signal_val_up = low * 0.99
         pd.testing.assert_series_equal(
             df_viewable.loc[df_viewable["signal_up"], "signal_val_up"],
             df_viewable.loc[df_viewable["signal_up"], "low"] * 0.99,
-            check_names=False
+            check_names=False,
         )
 
     if df_viewable["signal_down"].any():
         # No NaN values where signal_down is True
-        assert not df_viewable.loc[df_viewable["signal_down"], "signal_val_down"].isna().any()
+        assert (
+            not df_viewable.loc[df_viewable["signal_down"], "signal_val_down"]
+            .isna()
+            .any()
+        )
 
         # Verify calculation: signal_val_down = high * 1.01
         pd.testing.assert_series_equal(
             df_viewable.loc[df_viewable["signal_down"], "signal_val_down"],
             df_viewable.loc[df_viewable["signal_down"], "high"] * 1.01,
-            check_names=False
+            check_names=False,
         )

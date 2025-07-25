@@ -1,12 +1,14 @@
 import asyncio
+
 import schedule
-import time
-from datetime import datetime, timezone
+
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from telethon import TelegramClient
 
-from src.services.MultiKernelRegression import apply_multi_kernel_regression
-from src.bot.price_bot import CryptoPriceBot
+from telegram_bot.bot.price_bot import CryptoPriceBot
+from telegram_bot.services.MultiKernelRegression import (
+    apply_multi_kernel_regression,
+)
 
 
 class SignalService:
@@ -27,7 +29,9 @@ class SignalService:
         return []
 
     @classmethod
-    async def add_monitor(cls, db, chat_id: int, symbols: list[str], price: float):
+    async def add_monitor(
+        cls, db, chat_id: int, symbols: list[str], price: float
+    ):
         # find if the user already has a monitor for the symbol
         # alerts has 2 fields: chat_id and data
         monitor = await db.signals.find_one({"chat_id": chat_id})
@@ -52,7 +56,9 @@ class SignalService:
 
         list_monitors["data"].pop(id - 1)
 
-        await db.signals.update_one({"chat_id": chat_id}, {"$set": list_monitors})
+        await db.signals.update_one(
+            {"chat_id": chat_id}, {"$set": list_monitors}
+        )
 
         return True
 
@@ -67,7 +73,10 @@ class SignalService:
 
                 for symbol in alerts:
                     try:
-                        ticker_data, exchange = await price_bot.fetch_ohlcv_data(
+                        (
+                            ticker_data,
+                            exchange,
+                        ) = await price_bot.fetch_ohlcv_data(
                             symbol, timeframe=timeframe, limit=200
                         )
 
@@ -75,7 +84,9 @@ class SignalService:
                             continue
 
                         current_price = ticker_data.iloc[-1]["close"]
-                        df = apply_multi_kernel_regression(ticker_data, repaint=True)
+                        df = apply_multi_kernel_regression(
+                            ticker_data, repaint=True
+                        )
                         signal_up, signal_down = df.iloc[-2][
                             ["signal_up", "signal_down"]
                         ]
@@ -119,11 +130,15 @@ class SignalService:
         schedule.every().minute.do(lambda: create_check_task("15m"))
 
         for hour in range(0, 24, 2):
-            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(create_check_task("2h"))
+            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(
+                create_check_task("2h")
+            )
 
         # Schedule 4h checks (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
         for hour in range(0, 24, 4):
-            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(create_check_task("4h"))
+            schedule.every().day.at(f"{hour:02d}:01", "UTC").do(
+                create_check_task("4h")
+            )
 
         # Schedule daily check at 00:00 UTC
         schedule.every().day.at("00:01", "UTC").do(create_check_task("1d"))

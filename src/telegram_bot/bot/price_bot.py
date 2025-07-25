@@ -1,19 +1,24 @@
-from src.utils.logger import logger
-from typing import Optional
-import ccxt.async_support as ccxt
-from ccxt.base.errors import BadSymbol
 import asyncio
-import pandas as pd
 import io
+
+from typing import Optional
+
+import ccxt.async_support as ccxt
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import numpy as np
+import pandas as pd
 
-from src.services.MultiKernelRegression import (
+from ccxt.base.errors import BadSymbol
+
+from telegram_bot.services.MultiKernelRegression import (
     apply_multi_kernel_regression,
     viewable_signal,
 )
-from src.services.custom_indicators.pinbar_detector import PinbarDetector
+from telegram_bot.services.custom_indicators.pinbar_detector import (
+    PinbarDetector,
+)
+from telegram_bot.utils.logger import logger
 
 
 class CryptoPriceBot:
@@ -66,7 +71,8 @@ class CryptoPriceBot:
                         break
 
             df = pd.DataFrame(
-                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
+                ohlcv,
+                columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
@@ -153,7 +159,9 @@ class CryptoPriceBot:
                 raise ValueError("Empty or invalid DataFrame provided")
 
             # use multi kernel regression to detect signals
-            df_signal = viewable_signal(apply_multi_kernel_regression(df, repaint=True))
+            df_signal = viewable_signal(
+                apply_multi_kernel_regression(df, repaint=True)
+            )
 
             ic = [
                 mpf.make_addplot(
@@ -220,10 +228,14 @@ class CryptoPriceBot:
             if buf is not None and buf.getbuffer().nbytes == 0:
                 buf.close()
 
-    async def fetch_timeframe_change(self, symbol: str, timeframe: str) -> dict | None:
+    async def fetch_timeframe_change(
+        self, symbol: str, timeframe: str
+    ) -> dict | None:
         """Helper function to fetch price change for a specific timeframe"""
         try:
-            ohlcv, exchange = await self.fetch_ohlcv_data(symbol, timeframe, limit=2)
+            ohlcv, exchange = await self.fetch_ohlcv_data(
+                symbol, timeframe, limit=2
+            )
             if len(ohlcv) >= 2:
                 prev_close = ohlcv.iloc[0]["close"]
                 current_close = ohlcv.iloc[1]["close"]
@@ -265,7 +277,9 @@ class CryptoPriceBot:
 
             # Fetch price changes for different timeframes concurrently
             timeframes = ["5m", "15m", "1h", "4h", "1d"]
-            tasks = [self.fetch_timeframe_change(symbol, tf) for tf in timeframes]
+            tasks = [
+                self.fetch_timeframe_change(symbol, tf) for tf in timeframes
+            ]
             timeframe_changes = await asyncio.gather(*tasks)
 
             # Create timeframe changes dictionary

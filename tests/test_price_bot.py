@@ -1,8 +1,11 @@
-import pytest
-import pandas as pd
 import io
+
 from unittest.mock import AsyncMock, patch
-from src.bot.price_bot import CryptoPriceBot
+
+import pandas as pd
+import pytest
+
+from telegram_bot.bot.price_bot import CryptoPriceBot
 
 
 @pytest.fixture
@@ -25,10 +28,15 @@ def valid_dataframe():
 
 
 @pytest.mark.asyncio
-async def test_generate_chart_with_valid_data(crypto_price_bot, valid_dataframe):
-    with patch("src.bot.price_bot.viewable_signal") as mock_signal, patch(
+async def test_generate_chart_with_valid_data(
+    crypto_price_bot, valid_dataframe
+):
+    with (
+        patch("src.bot.price_bot.viewable_signal") as mock_signal,
+        patch(
             "src.bot.price_bot.apply_multi_kernel_regression"
-    ) as mock_apply_regression:
+        ) as mock_apply_regression,
+    ):
         mock_apply_regression.return_value = valid_dataframe
         mock_signal.return_value = pd.DataFrame(
             {
@@ -73,10 +81,16 @@ async def test_generate_chart_with_invalid_dataframe(crypto_price_bot):
 
 
 @pytest.mark.asyncio
-async def test_generate_chart_handles_save_error(crypto_price_bot, valid_dataframe):
-    with patch("matplotlib.pyplot.Figure.savefig") as mock_savefig, patch(
-            "src.bot.price_bot.viewable_signal"
-    ) as mock_signal, patch("src.bot.price_bot.apply_multi_kernel_regression") as mock_apply_regression:
+async def test_generate_chart_handles_save_error(
+    crypto_price_bot, valid_dataframe
+):
+    with (
+        patch("matplotlib.pyplot.Figure.savefig") as mock_savefig,
+        patch("src.bot.price_bot.viewable_signal") as mock_signal,
+        patch(
+            "src.bot.price_bot.apply_multi_kernel_regression"
+        ) as mock_apply_regression,
+    ):
         mock_savefig.side_effect = Exception("Save error")
         mock_apply_regression.return_value = valid_dataframe
         mock_signal.return_value = pd.DataFrame(

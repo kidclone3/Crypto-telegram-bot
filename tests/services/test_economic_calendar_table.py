@@ -1,15 +1,17 @@
-import pytest
 import pandas as pd
+import pytest
+
 from bs4 import BeautifulSoup
-from src.services.economic_calendar_table import (
-    usa_table,
-    find_number_star,
-    find_event,
-    find_value,
-    get_extreme,
+
+from telegram_bot.services.economic_calendar_table import (
     clean_df,
     # final_table and get_event might require mocking network requests,
     # focusing on the pure transformation functions first.
+    find_event,
+    find_number_star,
+    find_value,
+    get_extreme,
+    usa_table,
 )
 
 
@@ -119,7 +121,10 @@ def test_get_extreme(sample_calendar_df):
     extreme_df = get_extreme(sample_calendar_df.copy())  # Use copy
     assert len(extreme_df) == 2
     assert all(extreme_df["Importance"] == "***")
-    assert list(extreme_df["Event"]) == ["Nonfarm Payrolls", "Michigan Sentiment"]
+    assert list(extreme_df["Event"]) == [
+        "Nonfarm Payrolls",
+        "Michigan Sentiment",
+    ]
 
 
 def test_clean_df(sample_uncleaned_df):

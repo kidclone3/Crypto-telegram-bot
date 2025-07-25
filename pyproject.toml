@@ -6,9 +6,11 @@ authors = ["Delus <kid21200@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 
+packages = [{ include = "telegram_bot", from = "src" }]
+
 [tool.poetry.dependencies]
 python = "^3.12"
-fastapi = {extras = ["standard"], version = "^0.115.6"}
+fastapi = { extras = ["standard"], version = "^0.115.6" }
 telethon = "^1.38.1"
 pydantic = "^2.10.3"
 pydantic-settings = "^2.6.1"
@@ -37,6 +39,3 @@ respx = "^0.21.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.ruff]
-src = [".", "src"]

@@ -1,15 +1,16 @@
-import pytest
-import pandas as pd
 import numpy as np
-from src.services.indicators import (
-    calculate_macd,
-    calculate_rsi,
+import pandas as pd
+import pytest
+
+from telegram_bot.services.indicators import (
     calculate_bollinger_bands,
-    calculate_obv,
-    calculate_stoch,
+    calculate_macd,
     calculate_mfi,
-    quant_agent,
+    calculate_obv,
+    calculate_rsi,
+    calculate_stoch,
     format_indicator_message,
+    quant_agent,
 )
 
 
@@ -128,7 +129,9 @@ def test_calculate_bollinger_bands(sample_prices_df):
     lower_band = lower_band.dropna()
     assert len(upper_band) == len(lower_band)
 
-    assert (upper_band >= lower_band).all()  # Upper band should always be >= lower band
+    assert (
+        upper_band >= lower_band
+    ).all()  # Upper band should always be >= lower band
 
 
 def test_calculate_obv(sample_prices_df):
@@ -203,7 +206,10 @@ def test_calculate_mfi(sample_prices_df):
 
 def test_format_indicator_message():
     reasoning = {
-        "MACD": {"signal": "bullish", "details": "Line crossed above Signal Line"},
+        "MACD": {
+            "signal": "bullish",
+            "details": "Line crossed above Signal Line",
+        },
         "RSI": {"signal": "neutral", "details": "45.67 (neutral)"},
         "Bollinger": {"signal": "bearish", "details": "above upper band"},
     }
@@ -211,7 +217,9 @@ def test_format_indicator_message():
     confidence = 0.33
     price = 50000.12
 
-    message = format_indicator_message(price, reasoning, overall_signal, confidence)
+    message = format_indicator_message(
+        price, reasoning, overall_signal, confidence
+    )
 
     assert isinstance(message, str)
     assert "💰 Price: $50,000.1200" in message
